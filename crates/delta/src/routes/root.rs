@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use revolt_config::config;
 use revolt_result::Result;
 use rocket::serde::json::Json;
@@ -86,6 +87,7 @@ pub struct GlobalLimits {
     server_roles: i64,
     /// max server channels
     server_channels: i64,
+    body_limit_size: i64,
 }
 
 /// # User Limits
@@ -109,9 +111,10 @@ pub struct UserLimits {
     pub video_resolution: [i64; 2],
     /// min/max aspect ratios
     pub video_aspect_ratio: [f64; 2],
+    pub file_upload_size_limits: HashMap<String, usize>,
 }
 
-/// # File Upload Size Limits
+
 /// # Build Information
 #[derive(Serialize, JsonSchema, Debug)]
 pub struct BuildInformation {
@@ -199,6 +202,7 @@ pub async fn root() -> Result<Json<RevoltConfig>> {
                     server_emoji: config.features.limits.global.server_emoji as i64,
                     server_roles: config.features.limits.global.server_roles as i64,
                     server_channels: config.features.limits.global.server_channels as i64,
+                    body_limit_size: config.features.limits.global.body_limit_size as i64,
                 },
                 new_user: UserLimits {
                     outgoing_friend_requests: config.features.limits.new_user.outgoing_friend_requests as i64,
@@ -210,6 +214,7 @@ pub async fn root() -> Result<Json<RevoltConfig>> {
                     video: config.features.limits.new_user.video,
                     video_resolution: [config.features.limits.new_user.video_resolution[0] as i64, config.features.limits.new_user.video_resolution[1] as i64],
                     video_aspect_ratio: [config.features.limits.new_user.video_aspect_ratio[0] as f64, config.features.limits.new_user.video_aspect_ratio[1] as f64],
+                    file_upload_size_limits: config.features.limits.new_user.file_upload_size_limit,
                 },
                 default: UserLimits {
                     outgoing_friend_requests: config.features.limits.default.outgoing_friend_requests as i64,
@@ -221,6 +226,7 @@ pub async fn root() -> Result<Json<RevoltConfig>> {
                     video: config.features.limits.default.video,
                     video_resolution: [config.features.limits.default.video_resolution[0] as i64, config.features.limits.default.video_resolution[1] as i64],
                     video_aspect_ratio: [config.features.limits.default.video_aspect_ratio[0] as f64, config.features.limits.default.video_aspect_ratio[1] as f64],
+                    file_upload_size_limits: config.features.limits.default.file_upload_size_limit,
                 },
             }
         },
