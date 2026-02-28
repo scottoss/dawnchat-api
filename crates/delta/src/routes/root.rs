@@ -114,6 +114,21 @@ pub struct UserLimits {
     pub file_upload_size_limits: HashMap<String, usize>,
 }
 
+fn user_limits_from_features_limits(fl: revolt_config::FeaturesLimits) -> UserLimits {
+    UserLimits{
+        outgoing_friend_requests: fl.outgoing_friend_requests as i64,
+        bots: fl.bots as i64,
+        message_length: fl.message_length as i64,
+        message_attachments: fl.message_attachments as i64,
+        servers: fl.servers as i64,
+        voice_quality: fl.voice_quality as i64,
+        video: fl.video,
+        video_resolution: [fl.video_resolution[0] as i64, fl.video_resolution[1] as i64],
+        video_aspect_ratio: [fl.video_aspect_ratio[0] as f64, fl.video_aspect_ratio[1] as f64],
+        file_upload_size_limits: fl.file_upload_size_limit,
+    }
+}
+
 
 /// # Build Information
 #[derive(Serialize, JsonSchema, Debug)]
@@ -204,30 +219,8 @@ pub async fn root() -> Result<Json<RevoltConfig>> {
                     server_channels: config.features.limits.global.server_channels as i64,
                     body_limit_size: config.features.limits.global.body_limit_size as i64,
                 },
-                new_user: UserLimits {
-                    outgoing_friend_requests: config.features.limits.new_user.outgoing_friend_requests as i64,
-                    bots: config.features.limits.new_user.bots as i64,
-                    message_length: config.features.limits.new_user.message_length as i64,
-                    message_attachments: config.features.limits.new_user.message_attachments as i64,
-                    servers: config.features.limits.new_user.servers as i64,
-                    voice_quality: config.features.limits.new_user.voice_quality as i64,
-                    video: config.features.limits.new_user.video,
-                    video_resolution: [config.features.limits.new_user.video_resolution[0] as i64, config.features.limits.new_user.video_resolution[1] as i64],
-                    video_aspect_ratio: [config.features.limits.new_user.video_aspect_ratio[0] as f64, config.features.limits.new_user.video_aspect_ratio[1] as f64],
-                    file_upload_size_limits: config.features.limits.new_user.file_upload_size_limit,
-                },
-                default: UserLimits {
-                    outgoing_friend_requests: config.features.limits.default.outgoing_friend_requests as i64,
-                    bots: config.features.limits.default.bots as i64,
-                    message_length: config.features.limits.default.message_length as i64,
-                    message_attachments: config.features.limits.default.message_attachments as i64,
-                    servers: config.features.limits.default.servers as i64,
-                    voice_quality: config.features.limits.default.voice_quality as i64,
-                    video: config.features.limits.default.video,
-                    video_resolution: [config.features.limits.default.video_resolution[0] as i64, config.features.limits.default.video_resolution[1] as i64],
-                    video_aspect_ratio: [config.features.limits.default.video_aspect_ratio[0] as f64, config.features.limits.default.video_aspect_ratio[1] as f64],
-                    file_upload_size_limits: config.features.limits.default.file_upload_size_limit,
-                },
+                new_user: user_limits_from_features_limits(config.features.limits.new_user),
+                default: user_limits_from_features_limits(config.features.limits.default),
             }
         },
         ws: config.hosts.events,
