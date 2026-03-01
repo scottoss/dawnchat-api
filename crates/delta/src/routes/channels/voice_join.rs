@@ -86,9 +86,11 @@ pub async fn call(
 
             let channel = Reference::from_unchecked(&channel_id)
                 .as_channel(db)
-                .await?;
+                .await;
 
-            delete_voice_state(&channel_id, channel.server(), &user.id).await?;
+            if channel.is_ok() {
+                delete_voice_state(&channel_id, channel.unwrap().server(), &user.id).await?;
+            }
         }
     } else {
         raise_if_in_voice(&user, channel.id()).await?;
