@@ -114,21 +114,22 @@ pub struct UserLimits {
     pub file_upload_size_limits: HashMap<String, usize>,
 }
 
-fn user_limits_from_features_limits(fl: revolt_config::FeaturesLimits) -> UserLimits {
-    UserLimits{
-        outgoing_friend_requests: fl.outgoing_friend_requests as i64,
-        bots: fl.bots as i64,
-        message_length: fl.message_length as i64,
-        message_attachments: fl.message_attachments as i64,
-        servers: fl.servers as i64,
-        voice_quality: fl.voice_quality as i64,
-        video: fl.video,
-        video_resolution: [fl.video_resolution[0] as i64, fl.video_resolution[1] as i64],
-        video_aspect_ratio: [fl.video_aspect_ratio[0] as f64, fl.video_aspect_ratio[1] as f64],
-        file_upload_size_limits: fl.file_upload_size_limit,
+impl UserLimits {
+    fn from_feature_limits(fl: revolt_config::FeaturesLimits) -> UserLimits {
+        UserLimits{
+            outgoing_friend_requests: fl.outgoing_friend_requests as i64,
+            bots: fl.bots as i64,
+            message_length: fl.message_length as i64,
+            message_attachments: fl.message_attachments as i64,
+            servers: fl.servers as i64,
+            voice_quality: fl.voice_quality as i64,
+            video: fl.video,
+            video_resolution: [fl.video_resolution[0] as i64, fl.video_resolution[1] as i64],
+            video_aspect_ratio: [fl.video_aspect_ratio[0] as f64, fl.video_aspect_ratio[1] as f64],
+            file_upload_size_limits: fl.file_upload_size_limit,
+        }
     }
 }
-
 
 /// # Build Information
 #[derive(Serialize, JsonSchema, Debug)]
@@ -219,8 +220,8 @@ pub async fn root() -> Result<Json<RevoltConfig>> {
                     server_channels: config.features.limits.global.server_channels as i64,
                     body_limit_size: config.features.limits.global.body_limit_size as i64,
                 },
-                new_user: user_limits_from_features_limits(config.features.limits.new_user),
-                default: user_limits_from_features_limits(config.features.limits.default),
+                new_user: UserLimits::from_feature_limits(config.features.limits.new_user),
+                default: UserLimits::from_feature_limits(config.features.limits.default),
             }
         },
         ws: config.hosts.events,
