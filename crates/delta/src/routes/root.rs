@@ -116,7 +116,7 @@ pub struct UserLimits {
 
 impl UserLimits {
     fn from_feature_limits(fl: revolt_config::FeaturesLimits) -> UserLimits {
-        UserLimits{
+        UserLimits {
             outgoing_friend_requests: fl.outgoing_friend_requests as i64,
             bots: fl.bots as i64,
             message_length: fl.message_length as i64,
