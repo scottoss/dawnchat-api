@@ -70,8 +70,8 @@ As a heads-up, the development environment uses the following ports:
 Now you can clone and build the project:
 
 ```bash
-git clone https://github.com/stoatchat/stoatchat stoatchat
-cd stoatchat
+git clone https://github.com/stoatchat/stoatchat stoat-backend
+cd stoat-backend
 mise build
 ```
 
@@ -158,15 +158,10 @@ You can start a web client by doing the following:
 corepack enable
 
 # clone the web client and run it:
-git clone --recursive https://github.com/stoatchat/for-legacy-web web
-cd web
-yarn
-yarn build:deps
-echo "VITE_API_URL=http://local.revolt.chat:14702" > .env.local
-yarn dev --port 14701
+git clone --recursive https://github.com/stoatchat/for-web stoat-web
+cd stoat-web
+# refer to stoat-web/README.md for startup, creating an account and loging in
 ```
-
-Then go to http://local.revolt.chat:14701 to create an account/login.
 
 When signing up, go to http://localhost:14080 to find confirmation/password reset emails.
 
