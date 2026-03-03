@@ -3,7 +3,7 @@ use revolt_database::{
     util::{permissions::perms, reference::Reference},
     voice::{
         delete_voice_state, get_channel_node, get_user_voice_channels, get_voice_channel_members,
-        raise_if_in_voice, set_call_notification_recipients, VoiceClient,
+        raise_if_in_voice, set_call_notification_recipients, set_channel_node, VoiceClient,
     },
     Database, User,
 };
@@ -60,6 +60,7 @@ pub async fn call(
     }
 
     let existing_node = get_channel_node(channel.id()).await?;
+    let has_existing_node = existing_node.is_some(); // we move existing_node in the next statement so this is the quickest way to know if we need to set it.
 
     let node = existing_node
         .or(node)
@@ -99,6 +100,10 @@ pub async fn call(
         .await?;
 
     let room = voice_client.create_room(&node, &channel).await?;
+
+    if !has_existing_node {
+        set_channel_node(channel.id(), &node).await?;
+    }
 
     log::debug!("Created room {}", room.name);
 
