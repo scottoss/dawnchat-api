@@ -61,6 +61,14 @@ pub async fn get_channel_node(channel: &str) -> Result<Option<String>> {
         .to_internal_error()
 }
 
+pub async fn delete_channel_node(channel: &str) -> Result<()> {
+    get_connection()
+        .await?
+        .del(format!("node:{channel}"))
+        .await
+        .to_internal_error()
+}
+
 pub async fn get_user_voice_channels(user_id: &str) -> Result<Vec<String>> {
     get_connection()
         .await?
@@ -228,6 +236,7 @@ pub async fn delete_channel_voice_state(
 
     let mut pipeline = Pipeline::new();
     pipeline.del(format!("vc_members:{channel_id}"));
+    pipeline.del(format!("node:{channel_id}"));
 
     for user_id in user_ids {
         let unique_key = format!("{user_id}:{parent_id}");
