@@ -1055,20 +1055,19 @@ impl crate::User {
             if perspective.id == self.id {
                 (RelationshipStatus::User, true)
             } else {
-                let relationship = perspective
+                let internal_relationship = perspective
                     .relations
                     .as_ref()
-                    .map(|relations| {
+                    .and_then(|relations| {
                         relations
                             .iter()
                             .find(|relationship| relationship.id == self.id)
-                            .map(|relationship| relationship.status.clone().into())
-                            .unwrap_or_default()
+                            .map(|relationship| relationship.status.clone())
                     })
-                    .unwrap_or_default();
+                    .unwrap_or(crate::RelationshipStatus::None);
 
-                let can_see_profile = relationship != RelationshipStatus::BlockedOther;
-                (relationship, can_see_profile)
+                let can_see_profile = internal_relationship != crate::RelationshipStatus::BlockedOther;
+                (internal_relationship.into(), can_see_profile)
             }
         } else {
             (RelationshipStatus::None, false)
@@ -1262,7 +1261,7 @@ impl From<crate::RelationshipStatus> for RelationshipStatus {
             crate::RelationshipStatus::Outgoing => RelationshipStatus::Outgoing,
             crate::RelationshipStatus::Incoming => RelationshipStatus::Incoming,
             crate::RelationshipStatus::Blocked => RelationshipStatus::Blocked,
-            crate::RelationshipStatus::BlockedOther => RelationshipStatus::BlockedOther,
+            crate::RelationshipStatus::BlockedOther => RelationshipStatus::Blocked,
         }
     }
 }
@@ -1392,5 +1391,82 @@ impl From<crate::VoiceInformation> for VoiceInformation {
         VoiceInformation {
             max_users: value.max_users
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn maps_blocked_to_blocked_outward() {
+        assert_eq!(
+            RelationshipStatus::from(crate::RelationshipStatus::Blocked),
+            RelationshipStatus::Blocked
+        );
+    }
+
+    #[test]
+    fn maps_blocked_other_to_blocked_outward() {
+        assert_eq!(
+            RelationshipStatus::from(crate::RelationshipStatus::BlockedOther),
+            RelationshipStatus::Blocked
+        );
+    }
+
+    #[test]
+    fn keeps_non_blocked_relationship_mappings() {
+        assert_eq!(
+            RelationshipStatus::from(crate::RelationshipStatus::None),
+            RelationshipStatus::None
+        );
+        assert_eq!(
+            RelationshipStatus::from(crate::RelationshipStatus::User),
+            RelationshipStatus::User
+        );
+        assert_eq!(
+            RelationshipStatus::from(crate::RelationshipStatus::Friend),
+            RelationshipStatus::Friend
+        );
+        assert_eq!(
+            RelationshipStatus::from(crate::RelationshipStatus::Outgoing),
+            RelationshipStatus::Outgoing
+        );
+        assert_eq!(
+            RelationshipStatus::from(crate::RelationshipStatus::Incoming),
+            RelationshipStatus::Incoming
+        );
+    }
+
+    #[async_std::test]
+    async fn into_known_hides_profile_state_for_internal_blocked_other() {
+        let target_id = "01ARZ3NDEKTSV4RRFFQ69G5FAV".to_string();
+        let perspective_id = "01ARZ3NDEKTSV4RRFFQ69G5FAX".to_string();
+
+        let target = crate::User {
+            id: target_id.clone(),
+            username: "target".to_string(),
+            discriminator: "0001".to_string(),
+            status: Some(crate::UserStatus {
+                text: Some("should be hidden".to_string()),
+                presence: Some(crate::Presence::Online),
+            }),
+            ..Default::default()
+        };
+
+        let perspective = crate::User {
+            id: perspective_id,
+            relations: Some(vec![crate::Relationship {
+                id: target_id,
+                status: crate::RelationshipStatus::BlockedOther,
+            }]),
+            ..Default::default()
+        };
+
+        let user = target.into_known(Some(&perspective), true).await;
+
+        assert_eq!(user.relationship, RelationshipStatus::Blocked);
+        assert!(!user.online);
+        assert!(user.status.is_none());
     }
 }

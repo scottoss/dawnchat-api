@@ -1,6 +1,6 @@
 use crate::{
     calculate_channel_permissions, calculate_user_permissions, ChannelPermission, ChannelType,
-    Override, PermissionQuery, RelationshipStatus, DEFAULT_PERMISSION_DIRECT_MESSAGE,
+    Override, PermissionQuery, RelationshipStatus, UserPermission, DEFAULT_PERMISSION_DIRECT_MESSAGE,
     DEFAULT_PERMISSION_SERVER, DEFAULT_PERMISSION_VIEW_ONLY,
 };
 
@@ -100,6 +100,116 @@ async fn validate_user_permissions() {
             unreachable!()
         }
     }
+}
+
+#[async_std::test]
+async fn blocked_relationship_parity_permissions() {
+    struct BlockedRelationshipScenario {
+        blocked_other: bool,
+    }
+
+    #[async_trait]
+    impl PermissionQuery for BlockedRelationshipScenario {
+        async fn are_we_privileged(&mut self) -> bool {
+            false
+        }
+
+        async fn are_we_a_bot(&mut self) -> bool {
+            false
+        }
+
+        async fn are_the_users_same(&mut self) -> bool {
+            false
+        }
+
+        async fn user_relationship(&mut self) -> RelationshipStatus {
+            if self.blocked_other {
+                RelationshipStatus::BlockedOther
+            } else {
+                RelationshipStatus::Blocked
+            }
+        }
+
+        async fn user_is_bot(&mut self) -> bool {
+            false
+        }
+
+        async fn have_mutual_connection(&mut self) -> bool {
+            true
+        }
+
+        async fn are_we_server_owner(&mut self) -> bool {
+            unreachable!()
+        }
+
+        async fn are_we_a_member(&mut self) -> bool {
+            unreachable!()
+        }
+
+        async fn get_default_server_permissions(&mut self) -> u64 {
+            unreachable!()
+        }
+
+        async fn get_our_server_role_overrides(&mut self) -> Vec<Override> {
+            unreachable!()
+        }
+
+        async fn are_we_timed_out(&mut self) -> bool {
+            unreachable!()
+        }
+
+        async fn do_we_have_publish_overwrites(&mut self) -> bool {
+            unreachable!()
+        }
+
+        async fn do_we_have_receive_overwrites(&mut self) -> bool {
+            unreachable!()
+        }
+
+        async fn get_channel_type(&mut self) -> ChannelType {
+            unreachable!()
+        }
+
+        async fn get_default_channel_permissions(&mut self) -> Override {
+            unreachable!()
+        }
+
+        async fn get_our_channel_role_overrides(&mut self) -> Vec<Override> {
+            unreachable!()
+        }
+
+        async fn do_we_own_the_channel(&mut self) -> bool {
+            unreachable!()
+        }
+
+        async fn are_we_part_of_the_channel(&mut self) -> bool {
+            unreachable!()
+        }
+
+        async fn set_recipient_as_user(&mut self) {
+            unreachable!()
+        }
+
+        async fn set_server_from_channel(&mut self) {
+            unreachable!()
+        }
+    }
+
+    let mut blocked_query = BlockedRelationshipScenario {
+        blocked_other: false,
+    };
+    let blocked_perms = calculate_user_permissions(&mut blocked_query).await;
+    let blocked_value: u64 = blocked_perms.into();
+    assert_eq!(blocked_value, UserPermission::Access as u64);
+
+    let mut blocked_other_query = BlockedRelationshipScenario {
+        blocked_other: true,
+    };
+    let blocked_other_perms = calculate_user_permissions(&mut blocked_other_query).await;
+    let blocked_other_value: u64 = blocked_other_perms.into();
+    assert_eq!(blocked_other_value, UserPermission::Access as u64);
+
+    assert_eq!(blocked_value, blocked_other_value);
 }
 
 #[async_std::test]
