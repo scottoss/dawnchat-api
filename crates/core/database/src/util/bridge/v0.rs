@@ -1041,9 +1041,11 @@ impl crate::User {
         }
     }
 
-    /// Convert user object into user model assuming mutual connection
+    /// Convert user object into user model using known relationship context.
     ///
-    /// Relations will never be included, i.e. when we process ourselves
+    /// This variant skips database permission lookups and derives visibility from
+    /// perspective relation state. Relations are never included in this output;
+    /// use `into_self` when converting the perspective user.
     pub async fn into_known<'a, P>(self, perspective: P, is_online: bool) -> User
     where
         P: Into<Option<&'a crate::User>>,
@@ -1066,7 +1068,10 @@ impl crate::User {
                     })
                     .unwrap_or(crate::RelationshipStatus::None);
 
-                let can_see_profile = internal_relationship != crate::RelationshipStatus::BlockedOther;
+                let can_see_profile = !matches!(
+                    internal_relationship,
+                    crate::RelationshipStatus::Blocked | crate::RelationshipStatus::BlockedOther
+                );
                 (internal_relationship.into(), can_see_profile)
             }
         } else {
@@ -1261,6 +1266,7 @@ impl From<crate::RelationshipStatus> for RelationshipStatus {
             crate::RelationshipStatus::Outgoing => RelationshipStatus::Outgoing,
             crate::RelationshipStatus::Incoming => RelationshipStatus::Incoming,
             crate::RelationshipStatus::Blocked => RelationshipStatus::Blocked,
+            // Outward payloads intentionally collapse directional blocked states.
             crate::RelationshipStatus::BlockedOther => RelationshipStatus::Blocked,
         }
     }
@@ -1467,6 +1473,74 @@ mod tests {
 
         assert_eq!(user.relationship, RelationshipStatus::Blocked);
         assert!(!user.online);
+        assert!(user.status.is_none());
+    }
+
+    #[async_std::test]
+    async fn into_known_hides_profile_state_for_internal_blocked() {
+        let target_id = "01ARZ3NDEKTSV4RRFFQ69G5FAY".to_string();
+        let perspective_id = "01ARZ3NDEKTSV4RRFFQ69G5FAZ".to_string();
+
+        let target = crate::User {
+            id: target_id.clone(),
+            username: "target".to_string(),
+            discriminator: "0001".to_string(),
+            status: Some(crate::UserStatus {
+                text: Some("should be hidden".to_string()),
+                presence: Some(crate::Presence::Online),
+            }),
+            ..Default::default()
+        };
+
+        let perspective = crate::User {
+            id: perspective_id,
+            relations: Some(vec![crate::Relationship {
+                id: target_id,
+                status: crate::RelationshipStatus::Blocked,
+            }]),
+            ..Default::default()
+        };
+
+        let user = target.into_known(Some(&perspective), true).await;
+
+        assert_eq!(user.relationship, RelationshipStatus::Blocked);
+        assert!(!user.online);
+        assert!(user.status.is_none());
+    }
+
+    #[async_std::test]
+    async fn into_hides_profile_state_for_internal_blocked_other() {
+        let db = crate::DatabaseInfo::Reference
+            .connect()
+            .await
+            .expect("reference database should initialize");
+
+        let target_id = "01ARZ3NDEKTSV4RRFFQ69G5FB0".to_string();
+        let perspective_id = "01ARZ3NDEKTSV4RRFFQ69G5FB1".to_string();
+
+        let target = crate::User {
+            id: target_id.clone(),
+            username: "target".to_string(),
+            discriminator: "0001".to_string(),
+            status: Some(crate::UserStatus {
+                text: Some("should be hidden".to_string()),
+                presence: Some(crate::Presence::Online),
+            }),
+            ..Default::default()
+        };
+
+        let perspective = crate::User {
+            id: perspective_id,
+            relations: Some(vec![crate::Relationship {
+                id: target_id,
+                status: crate::RelationshipStatus::BlockedOther,
+            }]),
+            ..Default::default()
+        };
+
+        let user = target.into(&db, Some(&perspective)).await;
+
+        assert_eq!(user.relationship, RelationshipStatus::Blocked);
         assert!(user.status.is_none());
     }
 }

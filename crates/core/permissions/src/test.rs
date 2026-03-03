@@ -209,6 +209,7 @@ async fn blocked_relationship_parity_permissions() {
     let blocked_other_value: u64 = blocked_other_perms.into();
     assert_eq!(blocked_other_value, UserPermission::Access as u64);
 
+    // Directional blocked variants must resolve to identical user permissions.
     assert_eq!(blocked_value, blocked_other_value);
 }
 
