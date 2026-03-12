@@ -286,4 +286,24 @@ impl AbstractMessages for ReferenceDb {
 
         Ok(())
     }
+
+    /// Delete all messages from a specific author in a list of channels from a certain ULID onwards
+    async fn delete_messages_by_author_since(
+        &self,
+        channels: &[String],
+        author: &str,
+        since_ulid: &str
+    ) -> Result<()> {
+        self.messages
+            .lock()
+            .await
+            .retain(|id, message| {
+                let should_delete = message.author == author
+                    && channels.contains(&message.channel)
+                    && id.as_str() >= since_ulid;
+                !should_delete
+            });
+
+        Ok(())
+    }
 }

@@ -40,4 +40,12 @@ pub trait AbstractMessages: Sync + Send {
 
     /// Delete messages from a channel by their ids and corresponding channel id
     async fn delete_messages(&self, channel: &str, ids: &[String]) -> Result<()>;
+
+    /// Delete all messages from a specific author in a server from a certain ULID onwards
+    async fn delete_messages_by_author_since(
+        &self,
+        channels: &[String],
+        author: &str,
+        since_ulid: &str
+    ) -> Result<()>;
 }

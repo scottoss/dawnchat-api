@@ -306,6 +306,21 @@ impl AbstractMessages for MongoDb {
             .map(|_| ())
             .map_err(|_| create_database_error!("delete_many", COL))
     }
+
+    /// Delete all messages from a specific author in a server from a certain ULID onwards
+    async fn delete_messages_by_author_since(&self, channels: &[String], author: &str, since_ulid: &str) -> Result<()> {
+        self.col::<Document>(COL)
+            .delete_many(
+                doc! {
+                    "author": author,
+                    "channel": { "$in": channels }, // Matches any channel in the slice
+                    "_id": { "$gte": since_ulid }
+                }
+            )
+            .await
+            .map(|_| ())
+            .map_err(|_| create_database_error!("delete_many", "messages"))
+    }
 }
 
 impl IntoDocumentPath for FieldsMessage {
