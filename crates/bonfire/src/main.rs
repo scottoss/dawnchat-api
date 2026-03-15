@@ -56,39 +56,41 @@ async fn main() {
 
     set_rabbitmq_connection(rmq_conn.clone());
 
-    let channel = rmq_conn
-        .open_channel(None)
-        .await
-        .expect("Failed to open RabbitMQ channel.");
+    if std::env::var("ENABLE_RABBITMQ_INGRESS").as_deref().is_ok_and(|v| v == "1") {
+        let channel = rmq_conn
+            .open_channel(None)
+            .await
+            .expect("Failed to open RabbitMQ channel.");
 
-    channel
-        .exchange_declare(
-            ExchangeDeclareArguments::new("events", "fanout")
-                .durable(true)
-                .finish(),
-        )
-        .await
-        .expect("wires");
+        channel
+            .exchange_declare(
+                ExchangeDeclareArguments::new("events", "fanout")
+                    .durable(true)
+                    .finish(),
+            )
+            .await
+            .expect("Failed to declare exchange");
 
-    channel
-        .queue_declare(QueueDeclareArguments::new("events").durable(true).finish())
-        .await
-        .expect("wires 2");
+        channel
+            .queue_declare(QueueDeclareArguments::new("events").durable(true).finish())
+            .await
+            .expect("Failed to declare queue");
 
-    channel
-        .queue_bind(QueueBindArguments::new("events", "events", "events"))
-        .await
-        .expect("wires 3");
+        channel
+            .queue_bind(QueueBindArguments::new("events", "events", "events"))
+            .await
+            .expect("Failed to bind queue");
 
-    channel
-        .basic_consume(
-            RabbitToRedisConsumer,
-            BasicConsumeArguments::new("events", "")
-                .manual_ack(false)
-                .finish(),
-        )
-        .await
-        .expect("wires 4");
+        channel
+            .basic_consume(
+                RabbitToRedisConsumer,
+                BasicConsumeArguments::new("events", "")
+                    .manual_ack(false)
+                    .finish(),
+            )
+            .await
+            .expect("Failed to consume channel");
+    }
 
     // Start accepting new connections and spawn a client for each connection.
     while let Ok((stream, addr)) = listener.accept().await {
