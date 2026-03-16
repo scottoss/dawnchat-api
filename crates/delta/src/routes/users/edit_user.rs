@@ -48,6 +48,7 @@ pub async fn edit(
 
     // Exit out early if nothing is changed
     if data.display_name.is_none()
+        && data.pronoun.is_none()
         && data.status.is_none()
         && data.profile.is_none()
         && data.avatar.is_none()
@@ -80,6 +81,7 @@ pub async fn edit(
 
     let mut partial: PartialUser = PartialUser {
         display_name: data.display_name,
+        pronoun: data.pronoun,
         badges: data.badges,
         flags: data.flags,
         ..Default::default()

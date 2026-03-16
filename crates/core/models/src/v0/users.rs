@@ -32,6 +32,9 @@ auto_derived_partial!(
         /// Display name
         #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
         pub display_name: Option<String>,
+        /// User's pronouns
+        #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+        pub pronoun: Option<String>,
         #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
         /// Avatar attachment
         pub avatar: Option<File>,
@@ -89,6 +92,7 @@ auto_derived!(
         ProfileContent,
         ProfileBackground,
         DisplayName,
+        Pronoun,
 
         /// Internal field, ignore this.
         Internal,
@@ -225,6 +229,9 @@ auto_derived!(
             validate(length(min = 2, max = 32), regex = "RE_DISPLAY_NAME")
         )]
         pub display_name: Option<String>,
+        /// New pronouns
+        #[cfg_attr(feature = "validator", validate(length(min = 1, max = 64)))]
+        pub pronoun: Option<String>,
         /// Attachment Id for avatar
         #[cfg_attr(feature = "validator", validate(length(min = 1, max = 128)))]
         pub avatar: Option<String>,
