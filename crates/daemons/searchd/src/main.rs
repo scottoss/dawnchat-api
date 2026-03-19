@@ -70,7 +70,7 @@ async fn _main() {
             &config,
             &connection,
             &config.elasticsearch.message_delete_queue,
-            consumers::MessageConsumer(client.clone()),
+            consumers::MessageDeleteConsumer(client.clone()),
         )
         .await,
     );
