@@ -1,6 +1,6 @@
 use amqprs::{BasicProperties, Deliver, channel::{BasicAckArguments, Channel}, consumer::AsyncConsumer};
 use async_trait::async_trait;
-use revolt_database::events::rabbit::{ChannelDeletePayload, MessageDeletePayload};
+use revolt_database::events::rabbit::ChannelDeletePayload;
 use revolt_search::ElasticsearchClient;
 
 pub struct ChannelDeleteConsumer(pub ElasticsearchClient);

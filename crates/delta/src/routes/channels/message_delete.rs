@@ -1,4 +1,3 @@
-use revolt_config::capture_error;
 use revolt_database::{
     AMQP, Database, User, util::{permissions::DatabasePermissionQuery, reference::Reference}
 };
