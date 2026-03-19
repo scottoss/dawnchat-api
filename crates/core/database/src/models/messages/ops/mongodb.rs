@@ -1,12 +1,12 @@
 use bson::{to_bson, Document};
 use futures::try_join;
-use mongodb::options::FindOptions;
+use mongodb::options::{FindOptions, ReadConcern};
 use revolt_models::v0::MessageSort;
 use revolt_result::Result;
 
 use crate::{
     AppendMessage, DocumentId, FieldsMessage, IntoDocumentPath, Message, MessageQuery,
-    MessageTimePeriod, MongoDb, PartialMessage,
+    MessageTimePeriod, MongoDb, PartialMessage, util::ChunkedDatabaseGenerator,
 };
 
 use super::AbstractMessages;
@@ -305,6 +305,31 @@ impl AbstractMessages for MongoDb {
             .await
             .map(|_| ())
             .map_err(|_| create_database_error!("delete_many", COL))
+    }
+
+    async fn fetch_all_messages(&self) -> Result<ChunkedDatabaseGenerator<Message>> {
+        let mut session = self
+            .start_session()
+            .await
+            .map_err(|_| create_database_error!("start_session", COL))?;
+
+        session
+            .start_transaction()
+            .read_concern(ReadConcern::snapshot())
+            .await
+            .map_err(|_| create_database_error!("start_transaction", COL))?;
+
+        let cursor = self
+            .col::<Message>(COL)
+            .find(doc! {})
+            .sort(doc ! { "_id": -1i32 })
+            .session(&mut session)
+            .batch_size(1000)
+            .await
+            .inspect_err(|e| log::error!("{e}"))
+            .map_err(|_| create_database_error!("find", COL))?;
+
+        Ok(ChunkedDatabaseGenerator::new_mongo(session, cursor))
     }
 }
 

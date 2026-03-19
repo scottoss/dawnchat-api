@@ -2,7 +2,10 @@ use futures::future::try_join_all;
 use indexmap::IndexSet;
 use revolt_result::Result;
 
-use crate::{AppendMessage, FieldsMessage, Message, MessageQuery, PartialMessage, ReferenceDb};
+use crate::{
+    util::ChunkedDatabaseGenerator, AppendMessage, FieldsMessage, Message, MessageQuery,
+    PartialMessage, ReferenceDb,
+};
 
 use super::AbstractMessages;
 
@@ -285,5 +288,11 @@ impl AbstractMessages for ReferenceDb {
             .retain(|id, message| message.channel != channel && !ids.contains(id));
 
         Ok(())
+    }
+
+    async fn fetch_all_messages(&self) -> Result<ChunkedDatabaseGenerator<Message>> {
+        Ok(ChunkedDatabaseGenerator::new_reference(
+            self.messages.lock().await.values().cloned().collect(),
+        ))
     }
 }

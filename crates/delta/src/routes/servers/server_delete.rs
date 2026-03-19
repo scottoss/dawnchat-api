@@ -1,10 +1,7 @@
 use revolt_database::{
-    util::reference::Reference,
-    voice::{
-        delete_voice_channel, get_user_voice_channel_in_server, remove_user_from_voice_channel,
-        VoiceClient,
-    },
-    Database, RemovalIntention, User,
+    AMQP, Database, RemovalIntention, User, util::reference::Reference, voice::{
+        VoiceClient, delete_voice_channel, get_user_voice_channel_in_server, remove_user_from_voice_channel
+    }
 };
 use revolt_models::v0;
 use revolt_result::Result;
@@ -19,6 +16,7 @@ use rocket_empty::EmptyResponse;
 #[delete("/<target>?<options..>")]
 pub async fn delete(
     db: &State<Database>,
+    amqp: &State<AMQP>,
     voice_client: &State<VoiceClient>,
     user: User,
     target: Reference<'_>,
@@ -32,7 +30,7 @@ pub async fn delete(
             delete_voice_channel(voice_client, channel_id, Some(&server.id)).await?;
         }
 
-        server.delete(db).await
+        server.delete(db, Some(amqp)).await
     } else {
         if let Some(channel_id) = get_user_voice_channel_in_server(&user.id, &server.id).await? {
             remove_user_from_voice_channel(db, voice_client, &channel_id, &user.id).await?;

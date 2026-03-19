@@ -1,6 +1,6 @@
 use revolt_result::Result;
 
-use crate::{AppendMessage, FieldsMessage, Message, MessageQuery, PartialMessage};
+use crate::{AppendMessage, FieldsMessage, Message, MessageQuery, PartialMessage, util::ChunkedDatabaseGenerator};
 
 #[cfg(feature = "mongodb")]
 mod mongodb;
@@ -40,4 +40,6 @@ pub trait AbstractMessages: Sync + Send {
 
     /// Delete messages from a channel by their ids and corresponding channel id
     async fn delete_messages(&self, channel: &str, ids: &[String]) -> Result<()>;
+
+    async fn fetch_all_messages(&self) -> Result<ChunkedDatabaseGenerator<Message>>;
 }

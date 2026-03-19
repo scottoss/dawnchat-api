@@ -409,6 +409,19 @@ pub struct Sentry {
 }
 
 #[derive(Deserialize, Debug, Clone)]
+pub struct Elasticsearch {
+    pub host: String,
+    pub port: u16,
+    pub api_key: String,
+
+    pub exchange: String,
+    pub message_queue: String,
+    pub message_edit_queue: String,
+    pub message_delete_queue: String,
+    pub channel_delete_queue: String,
+}
+
+#[derive(Deserialize, Debug, Clone)]
 pub struct Settings {
     pub database: Database,
     pub rabbit: Rabbit,
@@ -419,6 +432,7 @@ pub struct Settings {
     pub features: Features,
     pub sentry: Sentry,
     pub production: bool,
+    pub elasticsearch: Elasticsearch,
 }
 
 impl Settings {
