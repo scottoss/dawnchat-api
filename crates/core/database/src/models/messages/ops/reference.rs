@@ -211,7 +211,7 @@ impl AbstractMessages for ReferenceDb {
     }
 
     /// Append information to a given message
-    async fn append_message(&self, id: &str, append: &AppendMessage) -> Result<()> {
+    async fn append_message(&self, id: &str, append: &AppendMessage) -> Result<Option<Message>> {
         let mut messages = self.messages.lock().await;
         if let Some(message_data) = messages.get_mut(id) {
             if let Some(embeds) = &append.embeds {
@@ -222,9 +222,11 @@ impl AbstractMessages for ReferenceDb {
                         message_data.embeds = Some(embeds.clone());
                     }
                 }
-            }
 
-            Ok(())
+                Ok(Some(message_data.clone()))
+            } else {
+                Ok(None)
+            }
         } else {
             Err(create_error!(NotFound))
         }
