@@ -117,6 +117,7 @@ static CONFIG_BUILDER: Lazy<RwLock<Config>> = Lazy::new(|| {
 pub struct Database {
     pub mongodb: String,
     pub redis: String,
+    pub redis_pubsub: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -454,12 +455,14 @@ pub async fn config() -> Settings {
     let mut config = read().await.try_deserialize::<Settings>().unwrap();
 
     // inject REDIS_URI for redis-kiss library
-    if std::env::var("REDIS_URL").is_err() {
+    if std::env::var("REDIS_URI").is_err() {
         std::env::set_var("REDIS_URI", config.database.redis.clone());
     }
 
     // auto-detect production nodes
-    if config.hosts.api.contains("https") && config.hosts.api.contains("revolt.chat") {
+    if config.hosts.api.contains("https")
+        && (config.hosts.api.contains("revolt.chat") || config.hosts.api.contains("stoat.chat"))
+    {
         config.production = true;
     }
 

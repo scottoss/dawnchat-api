@@ -1,6 +1,6 @@
 use revolt_database::{
     util::{permissions::DatabasePermissionQuery, reference::Reference},
-    voice::{delete_voice_channel, VoiceClient},
+    voice::{delete_voice_channel, UserVoiceChannel, VoiceClient},
     AuditLogEntryAction, Channel, Database, FieldsChannel, File, PartialChannel, SystemMessage,
     User, AMQP,
 };
@@ -272,7 +272,7 @@ pub async fn edit(
     channel.update(db, partial.clone(), remove.clone()).await?;
 
     if channel.voice().is_none() {
-        delete_voice_channel(voice_client, channel.id(), channel.server()).await?;
+        delete_voice_channel(voice_client, &UserVoiceChannel::from_channel(&channel)).await?;
     }
 
     if let Some(before) = before {

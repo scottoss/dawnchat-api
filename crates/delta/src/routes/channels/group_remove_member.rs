@@ -1,6 +1,6 @@
 use revolt_database::{
     util::reference::Reference,
-    voice::{is_in_voice_channel, remove_user_from_voice_channel, VoiceClient},
+    voice::{is_in_voice_channel, remove_user_from_voice_channel, UserVoiceChannel, VoiceClient},
     Channel, Database, User, AMQP,
 };
 use revolt_permissions::ChannelPermission;
@@ -54,8 +54,10 @@ pub async fn remove_member(
         return Err(create_error!(InvalidOperation));
     };
 
-    if is_in_voice_channel(&member.id, channel.id()).await? {
-        remove_user_from_voice_channel(db, voice_client, channel.id(), &member.id).await?;
+    let user_voice_channel = UserVoiceChannel::from_channel(&channel);
+
+    if is_in_voice_channel(member.id, &user_voice_channel).await? {
+        remove_user_from_voice_channel(voice_client, &user_voice_channel, member.id).await?;
     };
 
     Ok(EmptyResponse)
