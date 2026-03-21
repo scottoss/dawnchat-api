@@ -1,5 +1,5 @@
 # Build Stage
-FROM ghcr.io/stoatchat/base:latest AS builder
+FROM git.britton.me/timbritton/stoat-base AS builder
 FROM debian:12 AS debian
 
 # Bundle Stage

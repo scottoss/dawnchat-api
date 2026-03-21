@@ -10,7 +10,7 @@ use tokio::sync::RwLock;
 
 pub mod types;
 
-const TENOR_API_BASE_URL: &str = "https://tenor.googleapis.com/v2";
+const TENOR_API_BASE_URL: &str = "https://api.klipy.com/v2";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TenorError {
@@ -75,7 +75,7 @@ impl Tenor {
             revolt_config::capture_error(&e);
             TenorError::HttpError
         })?;
-
+        println!("{}", text);
         Ok(Arc::new(serde_json::from_str(&text).unwrap()))
     }
 
@@ -102,7 +102,7 @@ impl Tenor {
                     Some(("key", &self.key)),
                     Some(("q", query)),
                     Some(("client_key", "Gifbox")),
-                    Some(("media_filter", "webm,tinywebm")),
+                    Some(("media_filter", "gif,webm,tinywebm")),
                     Some(("locale", locale)),
                     Some(("contentfilter", "high")),
                     Some(("limit", &limit.to_string())),
@@ -179,7 +179,7 @@ impl Tenor {
                 &[
                     Some(("key", &self.key)),
                     Some(("client_key", "Gifbox")),
-                    Some(("media_filter", "webm,tinywebm")),
+                    Some(("media_filter", "gif,webm,tinywebm")),
                     Some(("locale", locale)),
                     Some(("contentfilter", "high")),
                     Some(("limit", &limit.to_string())),
