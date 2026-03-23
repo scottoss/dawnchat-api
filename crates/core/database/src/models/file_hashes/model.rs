@@ -45,7 +45,7 @@ auto_derived!(
         Image {
             width: isize,
             height: isize,
-            thumbhash: Vec<u8>,
+            thumbhash: Option<Vec<u8>>,
             #[serde(default)]
             animated: bool,
         },

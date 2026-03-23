@@ -36,7 +36,7 @@ pub fn generate_metadata(f: &NamedTempFile, mime_type: &str) -> Metadata {
                     .map(|((width, height), rgba)| {
                         thumbhash::rgba_to_thumb_hash(width as usize, height as usize, &rgba)
                     })
-                    .unwrap_or_default(),
+                    .ok(),
                 animated: is_animated(f, mime_type).unwrap_or(false),
             })
             .unwrap_or_default()

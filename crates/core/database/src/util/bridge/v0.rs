@@ -415,7 +415,7 @@ impl From<crate::Metadata> for Metadata {
                 width: width as usize,
                 height: height as usize,
                 thumbhash,
-                animated: animated as bool,
+                animated,
             },
             crate::Metadata::Video { width, height } => Metadata::Video {
                 width: width as usize,
