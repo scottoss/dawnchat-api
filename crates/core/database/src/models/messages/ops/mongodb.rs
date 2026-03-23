@@ -336,27 +336,25 @@ impl AbstractMessages for MongoDb {
             },
         ];
 
+        #[derive(Deserialize)]
+        struct AggregatedChannel {
+            #[serde(rename = "_id")]
+            channel: String,
+            message_ids: Vec<String>,
+        }
+
         let mut cursor = self
             .col::<Document>(COL)
             .aggregate(pipeline)
             .await
-            .map_err(|_| create_database_error!("aggregate", COL))?;
+            .map_err(|_| create_database_error!("aggregate", COL))?
+            .with_type::<AggregatedChannel>();
 
         let mut deleted_messages: HashMap<String, Vec<String>> = HashMap::new();
 
-        // We still iterate, but now there is only one document per channel, rather than one per message
         while let Some(result) = cursor.next().await {
-            if let Ok(doc) = result {
-                if let (Ok(channel), Ok(message_ids_bson)) =
-                    (doc.get_str("_id"), doc.get_array("message_ids"))
-                {
-                    let message_ids: Vec<String> = message_ids_bson
-                        .iter()
-                        .filter_map(|bson_val| bson_val.as_str().map(|s| s.to_string()))
-                        .collect();
-
-                    deleted_messages.insert(channel.to_string(), message_ids);
-                }
+            if let Ok(item) = result {
+                deleted_messages.insert(item.channel, item.message_ids);
             }
         }
 
