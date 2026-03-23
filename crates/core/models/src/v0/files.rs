@@ -46,11 +46,12 @@ auto_derived!(
         File,
         /// File contains textual data and should be displayed as such
         Text,
-        /// File is an image with specific dimensions
+        /// File is an image with specific dimensions, and may be animated
         Image {
             width: usize,
             height: usize,
             thumbhash: Vec<u8>,
+            animated: bool,
         },
         /// File is a video with specific dimensions
         Video { width: usize, height: usize },

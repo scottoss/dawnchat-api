@@ -20,6 +20,7 @@ pub async fn strip_metadata(
             width,
             height,
             thumbhash,
+            animated,
         } => match mime {
             // // little_exif does not appear to parse JPEGs correctly? had 2/2 files fail
             // "image/jpeg" | "image/png" => {
@@ -103,6 +104,7 @@ pub async fn strip_metadata(
                         width,
                         height,
                         thumbhash: thumbhash.clone(),
+                        animated: *animated,
                     },
                 ))
             }

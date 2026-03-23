@@ -410,10 +410,12 @@ impl From<crate::Metadata> for Metadata {
                 width,
                 height,
                 thumbhash,
+                animated,
             } => Metadata::Image {
                 width: width as usize,
                 height: height as usize,
                 thumbhash,
+                animated: animated as bool,
             },
             crate::Metadata::Video { width, height } => Metadata::Video {
                 width: width as usize,
@@ -433,10 +435,12 @@ impl From<Metadata> for crate::Metadata {
                 width,
                 height,
                 thumbhash,
+                animated,
             } => crate::Metadata::Image {
                 width: width as isize,
                 height: height as isize,
                 thumbhash,
+                animated,
             },
             Metadata::Video { width, height } => crate::Metadata::Video {
                 width: width as isize,
