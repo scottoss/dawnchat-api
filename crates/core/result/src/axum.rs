@@ -40,6 +40,7 @@ impl IntoResponse for Error {
                 retry_after: _,
             } => StatusCode::TOO_MANY_REQUESTS,
 
+            ErrorType::CantCreateServers => StatusCode::FORBIDDEN,
             ErrorType::UnknownServer => StatusCode::NOT_FOUND,
             ErrorType::InvalidRole => StatusCode::NOT_FOUND,
             ErrorType::Banned => StatusCode::FORBIDDEN,

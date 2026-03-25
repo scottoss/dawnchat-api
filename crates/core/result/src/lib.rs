@@ -1,5 +1,5 @@
-use std::panic::Location;
 use std::fmt::Display;
+use std::panic::Location;
 
 #[cfg(feature = "serde")]
 #[macro_use]
@@ -107,6 +107,7 @@ pub enum ErrorType {
     },
 
     // ? Server related errors
+    CantCreateServers,
     UnknownServer,
     InvalidRole,
     Banned,
@@ -235,17 +236,16 @@ impl<T, E: std::fmt::Debug + std::error::Error> ToRevoltError<T> for Result<T, E
     fn to_internal_error(self) -> Result<T, Error> {
         let loc = Location::caller();
 
-        self
-            .map_err(|e| {
-                log::error!("{e:?}");
-                #[cfg(feature = "sentry")]
-                sentry::capture_error(&e);
+        self.map_err(|e| {
+            log::error!("{e:?}");
+            #[cfg(feature = "sentry")]
+            sentry::capture_error(&e);
 
-                Error {
-                    error_type: ErrorType::InternalError,
-                    location: format!("{}:{}:{}", loc.file(), loc.line(), loc.column())
-                }
-            })
+            Error {
+                error_type: ErrorType::InternalError,
+                location: format!("{}:{}:{}", loc.file(), loc.line(), loc.column()),
+            }
+        })
     }
 }
 
@@ -254,11 +254,9 @@ impl<T> ToRevoltError<T> for Option<T> {
     fn to_internal_error(self) -> Result<T, Error> {
         let loc = Location::caller();
 
-        self.ok_or_else(|| {
-            Error {
-                error_type: ErrorType::InternalError,
-                location: format!("{}:{}:{}", loc.file(), loc.line(), loc.column())
-            }
+        self.ok_or_else(|| Error {
+            error_type: ErrorType::InternalError,
+            location: format!("{}:{}:{}", loc.file(), loc.line(), loc.column()),
         })
     }
 }
