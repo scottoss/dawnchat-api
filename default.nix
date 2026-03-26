@@ -19,6 +19,7 @@ in pkgs.mkShell {
   packages = with pkgs; [
     mise
     cargo-binstall
+    cargo
     (writeShellScriptBin "fish" ''
       exec ${pkgs.fish}/bin/fish -C 'mise activate fish | source' "$@"
     '')
