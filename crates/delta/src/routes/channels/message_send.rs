@@ -1,5 +1,5 @@
 use chrono::{Duration, Utc};
-use redis_kiss::{get_connection, AsyncCommands, redis};
+use redis_kiss::{get_connection, redis, AsyncCommands};
 use revolt_database::util::permissions::DatabasePermissionQuery;
 use revolt_database::{
     util::idempotency::IdempotencyKey, util::reference::Reference, Database, User,
@@ -59,42 +59,41 @@ pub async fn message_send(
     }
 
     if !permissions.has_channel_permission(ChannelPermission::BypassSlowmode) {
-        if let Channel::TextChannel { slowmode: Some(channel_slowmode), id: channel_id, .. } = &channel {
+        if let Channel::TextChannel {
+            slowmode: Some(channel_slowmode),
+            id: channel_id,
+            ..
+        } = &channel
+        {
             if *channel_slowmode > 0 {
                 if let Ok(conn) = get_connection().await {
                     let mut conn = conn.into_inner();
 
                     let slowmode_key = format!("slowmode:{}:{}", user.id, channel_id);
 
-                    // Atomic Check-and-Set
-                    // Try to set the key to "1" ONLY if it does not exist (NX),
-                    // and if successful, set its expiration to `channel_slowmode` seconds (EX).
-                    let set_result: Option<String> = redis::cmd("SET")
-                        .arg(&slowmode_key)
-                        .arg("1") // The value doesn't matter, only the key's existence
-                        .arg("NX")
-                        .arg("EX")
-                        .arg(*channel_slowmode)
-                        .query_async(&mut conn)
+                    // Atomic check-and-set: only set if absent and apply expiry in one command.
+                    let set_result: Option<String> = conn
+                        .set_options(
+                            &slowmode_key,
+                            "1", // The value doesn't matter, only the key's existence
+                            redis::SetOptions::default()
+                                .conditional_set(redis::ExistenceCheck::NX)
+                                .with_expiration(redis::SetExpiry::EX(*channel_slowmode as usize)),
+                        )
                         .await
                         .unwrap_or(None);
 
                     // If `set_result` is None, the `NX` condition failed because the key already exists.
                     // This means the user is currently in slowmode.
                     if set_result.is_none() {
-
                         // Fetch the remaining TTL to accurately populate the retry_after field
-                        let ttl: i64 = redis::cmd("TTL")
-                            .arg(&slowmode_key)
-                            .query_async(&mut conn)
-                            .await
-                            .unwrap_or(0);
+                        let ttl: i64 = conn.ttl(&slowmode_key).await.unwrap_or(0);
 
                         // Redis returns positive integers for valid TTLs
                         if ttl > 0 {
                             return Err(create_error!(InSlowmode {
-                            retry_after: ttl as u64
-                        }));
+                                retry_after: ttl as u64
+                            }));
                         }
                     }
                 }
