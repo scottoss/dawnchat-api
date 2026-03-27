@@ -436,7 +436,8 @@ impl User {
         User::validate_username(original_username_str)?;
         let username = User::sanitise_username(&original_username).await;
         let is_username_sanitised = username != original_username;
-        if is_username_sanitised {
+        User::validate_username(&username)?;
+        let new_username = User::sanitise_username(&username).await;
             self.update(
                 db,
                 PartialUser {
