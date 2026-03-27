@@ -239,6 +239,7 @@ impl Member {
         }
     }
 
+    /// Generates a PartialMember containing the data which has changed in an update
     pub fn generate_diff(&self, partial: &PartialMember, remove: &[FieldsMember]) -> PartialMember {
         let mut before = PartialMember::default();
 

@@ -6,6 +6,7 @@ use super::AbstractAuditLogs;
 
 #[async_trait]
 impl AbstractAuditLogs for ReferenceDb {
+    /// Inserts an entry into the server's audit log
     async fn insert_audit_log_entry(&self, entry: &AuditLogEntry) -> Result<()> {
         self.audit_logs
             .lock()
@@ -15,6 +16,7 @@ impl AbstractAuditLogs for ReferenceDb {
         Ok(())
     }
 
+    /// Fetches a server's audit logs using the provided query options
     async fn get_server_audit_logs(
         &self,
         server: &str,

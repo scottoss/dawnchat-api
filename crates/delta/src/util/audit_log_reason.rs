@@ -6,6 +6,9 @@ use rocket::{
 };
 use schemars::schema::{InstanceType, SchemaObject, SingleOrVec};
 
+/// Newtype for an audit log reason.
+///
+/// Extracts the reason from the `X-Audit-Log-Reason` header if provided.
 pub struct AuditLogReason(pub Option<String>);
 
 #[async_trait]

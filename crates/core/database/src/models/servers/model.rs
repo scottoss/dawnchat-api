@@ -231,6 +231,7 @@ impl Server {
         }
     }
 
+    /// Generates a PartialServer containing the data which has changed in an update
     pub fn generate_diff(&self, partial: &PartialServer, remove: &[FieldsServer]) -> PartialServer {
         let mut before = PartialServer::default();
 
@@ -394,6 +395,7 @@ impl Role {
         }
     }
 
+    /// Generates a PartialRole containing the data which has changed in an update
     pub fn generate_diff(&self, partial: &PartialRole, remove: &[FieldsRole]) -> PartialRole {
         let mut before = PartialRole::default();
 

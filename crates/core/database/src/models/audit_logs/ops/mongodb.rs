@@ -9,10 +9,12 @@ static COL: &str = "audit_logs";
 
 #[async_trait]
 impl AbstractAuditLogs for MongoDb {
+    /// Inserts an entry into the server's audit log
     async fn insert_audit_log_entry(&self, entry: &AuditLogEntry) -> Result<()> {
         query!(self, insert_one, COL, entry).map(|_| ())
     }
 
+    /// Fetches a server's audit logs using the provided query options
     async fn get_server_audit_logs(
         &self,
         server: &str,

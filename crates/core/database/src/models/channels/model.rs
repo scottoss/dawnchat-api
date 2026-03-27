@@ -634,6 +634,7 @@ impl Channel {
         }
     }
 
+    /// Generates a PartialChannel containing the data which has changed in an update
     pub fn generate_diff(
         &self,
         partial: &PartialChannel,

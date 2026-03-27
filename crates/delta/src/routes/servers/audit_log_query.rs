@@ -8,6 +8,9 @@ use revolt_result::{create_error, Result};
 use rocket::{serde::json::Json, State};
 use validator::Validate;
 
+/// # Audit Log Query
+///
+/// Queries a server's audit logs.
 #[openapi(tag = "Audit Logs")]
 #[get("/<target>/audit_logs?<options..>")]
 pub async fn query(

@@ -5,16 +5,23 @@ use crate::v0::{
 use revolt_permissions::Override;
 
 auto_derived!(
+    /// Audit log entry
     pub struct AuditLogEntry {
+        /// Unique ID
         #[serde(rename = "_id")]
         pub id: String,
 
+        /// The server the entry happened in
         pub server: String,
+        /// User provided reason
         pub reason: Option<String>,
+        /// User who ran the action
         pub user: String,
+        /// The action ran
         pub action: AuditLogEntryAction,
     }
 
+    /// Indivual action stored on the audit log
     #[serde(tag = "type")]
     #[allow(clippy::large_enum_variant)]
     pub enum AuditLogEntryAction {
@@ -98,6 +105,7 @@ auto_derived!(
         },
     }
 
+    /// Audit log query filters
     #[cfg_attr(feature = "validator", derive(validator::Validate))]
     #[cfg_attr(feature = "rocket", derive(rocket::FromForm))]
     pub struct OptionsAuditLogQuery {

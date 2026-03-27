@@ -10,18 +10,28 @@ use revolt_permissions::OverrideField;
 use revolt_result::Result;
 
 auto_derived!(
+    /// Audit log entry
     pub struct AuditLogEntry {
+        /// Unique ID
         #[serde(rename = "_id")]
         pub id: String,
 
+        /// When the audit log entry gets auto-deleted
+        ///
+        /// This is only stored in the database and not given to users.
         pub expires_at: Timestamp,
 
+        /// The server the entry happened in
         pub server: String,
+        /// User provided reason
         pub reason: Option<String>,
+        /// User who ran the action
         pub user: String,
+        /// The action ran
         pub action: AuditLogEntryAction,
     }
 
+    /// Indivual audit log action
     #[serde(tag = "type")]
     #[allow(clippy::large_enum_variant)]
     pub enum AuditLogEntryAction {
@@ -105,11 +115,17 @@ auto_derived!(
         },
     }
 
+    /// Audit Log Query
     pub struct AuditLogQuery {
+        /// Filter by who ran the action
         pub user: Option<String>,
+        /// Filter by the action type
         pub r#type: Option<Vec<String>>,
+        /// Entries before a certain entry id
         pub before: Option<String>,
+        /// Entries after a certain entry id
         pub after: Option<String>,
+        /// Maximum number of entries to fetch
         pub limit: Option<i64>,
     }
 );

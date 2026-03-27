@@ -233,6 +233,7 @@ pub struct ApiUsers {
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct ApiAuditLogs {
+    /// How long audit log entries last before being removed, in seconds
     pub expires_after: u64,
 }
 
