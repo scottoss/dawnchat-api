@@ -213,11 +213,7 @@ impl User {
             id: account_id.into().unwrap_or_else(|| Ulid::new().to_string()),
             discriminator: User::find_discriminator(db, &username, None).await?,
             username,
-            display_name: if is_username_sanitised {
-                Some(original_username)
-            } else {
-                Default::default()
-            },
+            display_name: Some(new_username),
             last_acknowledged_policy_change: Timestamp::now_utc(),
             ..Default::default()
         };
