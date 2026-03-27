@@ -298,23 +298,51 @@ impl AbstractMessages for ReferenceDb {
     ) -> Result<HashMap<String, Vec<String>>> {
         let threshold_ulid = Ulid::from_datetime(since).to_string();
         let mut deleted_messages: HashMap<String, Vec<String>> = HashMap::new();
+        let mut attachment_ids: Vec<String> = Vec::new();
 
+        let messages = self.messages.lock().await;
+
+        // First pass: collect attachment IDs and message IDs to delete
+        for (id, message) in messages.iter() {
+            let should_delete = message.author == author
+                && channels.contains(&message.channel)
+                && id.as_str() >= threshold_ulid.as_str();
+
+            if should_delete {
+                // Collect attachment IDs
+                if let Some(attachments) = &message.attachments {
+                    for attachment in attachments {
+                        attachment_ids.push(attachment.id.clone());
+                    }
+                }
+
+                deleted_messages
+                    .entry(message.channel.clone())
+                    .or_default()
+                    .push(id.clone());
+            }
+        }
+        drop(messages);
+
+        // Mark attachments as deleted
+        if !attachment_ids.is_empty() {
+            let mut files = self.files.lock().await;
+            for attachment_id in attachment_ids {
+                if let Some(file) = files.get_mut(&attachment_id) {
+                    file.deleted = Some(true);
+                }
+            }
+        }
+
+        // Delete the messages
         self.messages
             .lock()
             .await
             .retain(|id, message| {
-                let should_delete = message.author == author
+                let should_keep = !(message.author == author
                     && channels.contains(&message.channel)
-                    && id.as_str() >= threshold_ulid.as_str();
-
-                if should_delete {
-                    deleted_messages
-                        .entry(message.channel.clone())
-                        .or_default()
-                        .push(id.clone());
-                }
-
-                !should_delete
+                    && id.as_str() >= threshold_ulid.as_str());
+                should_keep
             });
 
         Ok(deleted_messages)
