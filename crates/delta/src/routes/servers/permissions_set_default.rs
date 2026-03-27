@@ -54,11 +54,10 @@ pub async fn set_default_server_permissions(
     server.update(db, partial.clone(), vec![]).await?;
 
     AuditLogEntryAction::ServerEdit {
-        remove: Vec::new(),
         before,
         after: partial,
     }
-    .insert(db, server.id.clone(), reason.0, user.id)
+    .insert(db, server.id.clone(), reason, user.id)
     .await;
 
     for channel_id in &server.channels {

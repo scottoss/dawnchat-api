@@ -49,7 +49,7 @@ pub async fn create(
         role: role.id.clone(),
         name: role.name.clone(),
     }
-    .insert(db, server.id, reason.0, user.id)
+    .insert(db, server.id, reason, user.id)
     .await;
 
     Ok(Json(v0::NewRoleResponse {

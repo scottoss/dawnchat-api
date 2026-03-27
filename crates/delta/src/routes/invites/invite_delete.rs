@@ -44,7 +44,7 @@ pub async fn delete(
                     invite: code,
                     channel: channel,
                 }
-                .insert(db, server.id, reason.0, user.id)
+                .insert(db, server.id, reason, user.id)
                 .await;
             }
             _ => unreachable!(),

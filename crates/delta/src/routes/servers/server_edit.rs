@@ -156,14 +156,13 @@ pub async fn edit(
 
     let before = server.generate_diff(&partial, &remove);
 
-    server.update(db, partial.clone(), remove.clone()).await?;
+    server.update(db, partial.clone(), remove).await?;
 
     AuditLogEntryAction::ServerEdit {
-        remove,
         before,
         after: partial,
     }
-    .insert(db, server.id.clone(), reason.0, user.id)
+    .insert(db, server.id.clone(), reason, user.id)
     .await;
 
     Ok(Json(server.into()))

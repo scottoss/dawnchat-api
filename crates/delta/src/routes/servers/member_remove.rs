@@ -55,7 +55,7 @@ pub async fn kick(
     AuditLogEntryAction::MemberKick {
         user: member.id.user.clone(),
     }
-    .insert(db, server.id.clone(), reason.0, user.id)
+    .insert(db, server.id.clone(), reason, user.id)
     .await;
 
     if let Some(channel_id) = get_user_voice_channel_in_server(target.id, &server.id).await? {

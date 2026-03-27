@@ -1412,12 +1412,10 @@ impl From<crate::AuditLogEntryAction> for AuditLogEntryAction {
             }
             crate::AuditLogEntryAction::MemberEdit {
                 user,
-                remove,
                 before,
                 after,
             } => AuditLogEntryAction::MemberEdit {
                 user,
-                remove: remove.into_iter().map(Into::into).collect(),
                 before: before.into(),
                 after: after.into(),
             },
@@ -1425,22 +1423,18 @@ impl From<crate::AuditLogEntryAction> for AuditLogEntryAction {
                 AuditLogEntryAction::MemberKick { user }
             }
             crate::AuditLogEntryAction::ServerEdit {
-                remove,
                 before,
                 after,
             } => AuditLogEntryAction::ServerEdit {
-                remove: remove.into_iter().map(Into::into).collect(),
                 before: before.into(),
                 after: after.into(),
             },
             crate::AuditLogEntryAction::RoleEdit {
                 role,
-                remove,
                 before,
                 after,
             } => AuditLogEntryAction::RoleEdit {
                 role,
-                remove: remove.into_iter().map(Into::into).collect(),
                 before: before.into(),
                 after: after.into(),
             },
@@ -1458,12 +1452,10 @@ impl From<crate::AuditLogEntryAction> for AuditLogEntryAction {
             }
             crate::AuditLogEntryAction::ChannelEdit {
                 channel,
-                remove,
                 before,
                 after,
             } => AuditLogEntryAction::ChannelEdit {
                 channel,
-                remove: remove.into_iter().map(Into::into).collect(),
                 before: before.into(),
                 after: after.into(),
             },

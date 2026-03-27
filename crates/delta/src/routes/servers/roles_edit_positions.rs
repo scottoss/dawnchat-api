@@ -78,7 +78,7 @@ pub async fn edit_role_ranks(
     AuditLogEntryAction::RolesReorder {
         positions: new_order,
     }
-    .insert(db, server.id.clone(), reason.0, user.id)
+    .insert(db, server.id.clone(), reason, user.id)
     .await;
 
     for channel_id in &server.channels {

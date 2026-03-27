@@ -74,7 +74,7 @@ pub async fn delete(
                 channel: channel.id().to_string(),
                 name: name.clone(),
             }
-            .insert(db, server.clone(), reason.0, user.id)
+            .insert(db, server.clone(), reason, user.id)
             .await;
 
             delete_voice_channel(voice_client, &UserVoiceChannel::from_channel(&channel)).await?;

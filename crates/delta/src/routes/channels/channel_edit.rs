@@ -269,7 +269,7 @@ pub async fn edit(
         None
     };
 
-    channel.update(db, partial.clone(), remove.clone()).await?;
+    channel.update(db, partial.clone(), remove).await?;
 
     if channel.voice().is_none() {
         delete_voice_channel(voice_client, &UserVoiceChannel::from_channel(&channel)).await?;
@@ -278,11 +278,10 @@ pub async fn edit(
     if let Some(before) = before {
         AuditLogEntryAction::ChannelEdit {
             channel: channel.id().to_string(),
-            remove,
             before,
             after: partial,
         }
-        .insert(db, channel.server().unwrap().to_string(), reason.0, user.id)
+        .insert(db, channel.server().unwrap().to_string(), reason, user.id)
         .await;
     };
 

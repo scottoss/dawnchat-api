@@ -1,5 +1,5 @@
 use crate::v0::{
-    FieldsChannel, FieldsMember, FieldsRole, FieldsServer, Member, PartialChannel, PartialMember,
+    Member, PartialChannel, PartialMember,
     PartialRole, PartialServer, User,
 };
 use revolt_permissions::Override;
@@ -38,8 +38,6 @@ auto_derived!(
         },
         ChannelEdit {
             channel: String,
-            #[serde(skip_serializing_if = "Vec::is_empty", default)]
-            remove: Vec<FieldsChannel>,
             before: PartialChannel,
             after: PartialChannel,
         },
@@ -54,8 +52,6 @@ auto_derived!(
         },
         MemberEdit {
             user: String,
-            #[serde(skip_serializing_if = "Vec::is_empty", default)]
-            remove: Vec<FieldsMember>,
             before: PartialMember,
             after: PartialMember,
         },
@@ -63,15 +59,11 @@ auto_derived!(
             user: String,
         },
         ServerEdit {
-            #[serde(skip_serializing_if = "Vec::is_empty", default)]
-            remove: Vec<FieldsServer>,
             before: PartialServer,
             after: PartialServer,
         },
         RoleEdit {
             role: String,
-            #[serde(skip_serializing_if = "Vec::is_empty", default)]
-            remove: Vec<FieldsRole>,
             before: PartialRole,
             after: PartialRole,
         },
@@ -118,22 +110,15 @@ auto_derived!(
         pub after: Option<String>,
         #[cfg_attr(feature = "validator", validate(range(min = 1, max = 100)))]
         pub limit: Option<i64>,
-        pub include_users: Option<bool>,
     }
 
-    #[serde(untagged)]
-    pub enum AuditLogQueryResponse {
-        AuditLogs(
-            /// List of audit logs
-            Vec<AuditLogEntry>,
-        ),
-        AuditLogsAndUsers {
-            /// List of audit logs
-            audit_logs: Vec<AuditLogEntry>,
-            /// List of users
-            users: Vec<User>,
-            /// List of members
-            members: Vec<Member>,
-        },
+    /// Response containing the audit log entries and the users involved
+    pub struct AuditLogQueryResponse {
+        /// List of audit logs
+        pub audit_logs: Vec<AuditLogEntry>,
+        /// List of users
+        pub users: Vec<User>,
+        /// List of members
+        pub members: Vec<Member>,
     }
 );

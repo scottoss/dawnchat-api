@@ -75,11 +75,10 @@ pub async fn set_default_channel_permissions(
 
                 AuditLogEntryAction::ChannelEdit {
                     channel: id,
-                    remove: Vec::new(),
                     before,
                     after: partial,
                 }
-                .insert(db, server, reason.0, user.id)
+                .insert(db, server, reason, user.id)
                 .await;
             } else {
                 return Err(create_error!(InvalidOperation));

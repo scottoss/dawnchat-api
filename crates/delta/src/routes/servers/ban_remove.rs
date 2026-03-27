@@ -33,7 +33,7 @@ pub async fn unban(
     AuditLogEntryAction::BanDelete {
         user: target.id.to_string(),
     }
-    .insert(db, server.id, reason.0, user.id)
+    .insert(db, server.id, reason, user.id)
     .await;
 
     Ok(EmptyResponse)

@@ -68,7 +68,7 @@ pub async fn create_webhook(
             name: webhook.name.clone(),
             channel: webhook.channel_id.clone(),
         }
-        .insert(db, server.id.clone(), reason.0, user.id)
+        .insert(db, server.id.clone(), reason, user.id)
         .await;
     };
 

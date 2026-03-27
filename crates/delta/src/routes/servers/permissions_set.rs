@@ -60,7 +60,6 @@ pub async fn set_role_permission(
 
     AuditLogEntryAction::RoleEdit {
         role: role_id.clone(),
-        remove: Vec::new(),
         before: PartialRole {
             permissions: Some(current_value),
             ..Default::default()
@@ -70,7 +69,7 @@ pub async fn set_role_permission(
             ..Default::default()
         },
     }
-    .insert(db, server.id.clone(), reason.0, user.id)
+    .insert(db, server.id.clone(), reason, user.id)
     .await;
 
     for channel_id in &server.channels {

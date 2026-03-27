@@ -49,7 +49,7 @@ pub async fn delete_emoji(
             emoji: emoji.id,
             name: emoji.name,
         }
-        .insert(db, server_id, reason.0, user.id)
+        .insert(db, server_id, reason, user.id)
         .await;
     };
 

@@ -46,7 +46,7 @@ pub async fn delete(
         role: role_id.clone(),
         name: role.name,
     }
-    .insert(db, server.id.clone(), reason.0, user.id)
+    .insert(db, server.id.clone(), reason, user.id)
     .await;
 
     for channel_id in &server.channels {

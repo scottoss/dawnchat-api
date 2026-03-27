@@ -51,3 +51,9 @@ impl OpenApiFromRequest<'_> for AuditLogReason {
         }))
     }
 }
+
+impl From<AuditLogReason> for Option<String> {
+    fn from(value: AuditLogReason) -> Self {
+        value.0
+    }
+}

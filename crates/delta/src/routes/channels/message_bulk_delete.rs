@@ -61,7 +61,7 @@ pub async fn bulk_delete_messages(
             channel: channel.id().to_string(),
             count: options.ids.len(),
         }
-        .insert(db, server.to_string(), reason.0, user.id)
+        .insert(db, server.to_string(), reason, user.id)
         .await;
     };
 

@@ -42,7 +42,7 @@ pub async fn delete(
             author: message.author.clone(),
             channel: message.channel.clone(),
         }
-        .insert(db, server.to_string(), reason.0, user.id.clone())
+        .insert(db, server.to_string(), reason, user.id.clone())
         .await;
     };
 

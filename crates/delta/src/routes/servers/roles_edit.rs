@@ -68,16 +68,15 @@ pub async fn edit(
 
         let before = role.generate_diff(&partial, &remove);
 
-        role.update(db, &server.id, partial.clone(), remove.clone())
+        role.update(db, &server.id, partial.clone(), remove)
             .await?;
 
         AuditLogEntryAction::RoleEdit {
             role: role_id.clone(),
-            remove,
             before,
             after: partial,
         }
-        .insert(db, server.id.clone(), reason.0, user.id)
+        .insert(db, server.id.clone(), reason, user.id)
         .await;
 
         for channel_id in &server.channels {

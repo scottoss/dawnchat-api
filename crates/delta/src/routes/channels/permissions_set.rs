@@ -62,7 +62,7 @@ pub async fn set_role_permissions(
                 role: role_id,
                 permissions: override_field,
             }
-            .insert(db, server_id, reason.0, user.id)
+            .insert(db, server_id, reason, user.id)
             .await;
 
             Ok(Json(new_channel.into()))

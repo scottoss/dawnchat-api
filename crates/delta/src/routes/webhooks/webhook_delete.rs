@@ -41,7 +41,7 @@ pub async fn webhook_delete(
             .server()
             .expect("Webhook created on non server channel")
             .to_string(),
-        reason.0,
+        reason,
         user.id,
     )
     .await;
