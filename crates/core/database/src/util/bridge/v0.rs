@@ -190,6 +190,7 @@ impl From<crate::Channel> for Channel {
                 role_permissions,
                 nsfw,
                 voice,
+                slowmode
             } => Channel::TextChannel {
                 id,
                 server,
@@ -201,6 +202,7 @@ impl From<crate::Channel> for Channel {
                 role_permissions,
                 nsfw,
                 voice: voice.map(|voice| voice.into()),
+                slowmode
             },
         }
     }
@@ -254,6 +256,7 @@ impl From<Channel> for crate::Channel {
                 role_permissions,
                 nsfw,
                 voice,
+                slowmode
             } => crate::Channel::TextChannel {
                 id,
                 server,
@@ -265,6 +268,7 @@ impl From<Channel> for crate::Channel {
                 role_permissions,
                 nsfw,
                 voice: voice.map(|voice| voice.into()),
+                slowmode
             },
         }
     }
@@ -284,6 +288,7 @@ impl From<crate::PartialChannel> for PartialChannel {
             default_permissions: value.default_permissions,
             last_message_id: value.last_message_id,
             voice: value.voice.map(|voice| voice.into()),
+            slowmode: value.slowmode,
         }
     }
 }
@@ -302,6 +307,7 @@ impl From<PartialChannel> for crate::PartialChannel {
             default_permissions: value.default_permissions,
             last_message_id: value.last_message_id,
             voice: value.voice.map(|voice| voice.into()),
+            slowmode: value.slowmode
         }
     }
 }
