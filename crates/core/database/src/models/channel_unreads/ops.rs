@@ -2,6 +2,7 @@ use revolt_result::Result;
 
 use crate::ChannelUnread;
 
+#[cfg(feature = "mongodb")]
 mod mongodb;
 mod reference;
 
@@ -23,6 +24,14 @@ pub trait AbstractChannelUnreads: Sync + Send {
         &self,
         channel_id: &str,
         user_id: &str,
+        message_ids: &[String],
+    ) -> Result<()>;
+
+    /// Add a mention.
+    async fn add_mention_to_many_unreads<'a>(
+        &self,
+        channel_id: &str,
+        user_ids: &[String],
         message_ids: &[String],
     ) -> Result<()>;
 

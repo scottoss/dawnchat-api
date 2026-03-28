@@ -85,6 +85,9 @@ auto_derived_partial!(
 auto_derived_partial!(
     /// Role
     pub struct Role {
+        /// Unique Id
+        #[cfg_attr(feature = "serde", serde(rename = "_id"))]
+        pub id: String,
         /// Role name
         pub name: String,
         /// Permissions available to this role
@@ -175,10 +178,13 @@ auto_derived!(
         /// Ranking position
         ///
         /// Smaller values take priority.
+        ///
+        /// **Removed** - no effect, use the edit server role positions route
         pub rank: Option<i64>,
     }
 
     /// Response after creating new role
+    // TODO: remove this in favor of just Role
     pub struct NewRoleResponse {
         /// Id of the role
         pub id: String,
@@ -250,8 +256,8 @@ auto_derived!(
         pub owner: Option<String>,
 
         /// Fields to remove from server object
-        #[cfg_attr(feature = "validator", validate(length(min = 1)))]
-        pub remove: Option<Vec<FieldsServer>>,
+        #[cfg_attr(feature = "serde", serde(default))]
+        pub remove: Vec<FieldsServer>,
     }
 
     /// New role information
@@ -270,11 +276,11 @@ auto_derived!(
         pub hoist: Option<bool>,
         /// Ranking position
         ///
-        /// Smaller values take priority.
+        /// **Removed** - no effect, use the edit server role positions route
         pub rank: Option<i64>,
         /// Fields to remove from role object
-        #[cfg_attr(feature = "validator", validate(length(min = 1)))]
-        pub remove: Option<Vec<FieldsRole>>,
+        #[cfg_attr(feature = "serde", serde(default))]
+        pub remove: Vec<FieldsRole>,
     }
 
     /// New role permissions
@@ -288,5 +294,10 @@ auto_derived!(
     pub struct OptionsServerDelete {
         /// Whether to not send a leave message
         pub leave_silently: Option<bool>,
+    }
+
+    /// New role positions
+    pub struct DataEditRoleRanks {
+        pub ranks: Vec<String>,
     }
 );

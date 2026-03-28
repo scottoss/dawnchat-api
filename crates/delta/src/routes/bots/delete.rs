@@ -1,4 +1,8 @@
-use revolt_database::{util::reference::Reference, Database, User};
+use revolt_database::{
+    util::reference::Reference,
+    voice::{remove_user_from_voice_channels, VoiceClient},
+    Database, User,
+};
 use revolt_result::{create_error, Result};
 use rocket::State;
 use rocket_empty::EmptyResponse;
@@ -10,15 +14,20 @@ use rocket_empty::EmptyResponse;
 #[delete("/<target>")]
 pub async fn delete_bot(
     db: &State<Database>,
+    voice_client: &State<VoiceClient>,
     user: User,
-    target: Reference,
+    target: Reference<'_>,
 ) -> Result<EmptyResponse> {
     let bot = target.as_bot(db).await?;
     if bot.owner != user.id {
         return Err(create_error!(NotFound));
     }
 
-    bot.delete(db).await.map(|_| EmptyResponse)
+    bot.delete(db).await?;
+
+    remove_user_from_voice_channels(voice_client, &bot.id).await?;
+
+    Ok(EmptyResponse)
 }
 
 #[cfg(test)]

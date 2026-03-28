@@ -2,7 +2,8 @@ use std::collections::HashSet;
 
 use crate::events::rabbit::*;
 use crate::User;
-use amqprs::channel::BasicPublishArguments;
+use amqprs::channel::{BasicPublishArguments, ExchangeDeclareArguments};
+use amqprs::connection::OpenConnectionArguments;
 use amqprs::{channel::Channel, connection::Connection, error::Error as AMQPError};
 use amqprs::{BasicProperties, FieldTable};
 use revolt_models::v0::PushNotification;
@@ -23,6 +24,35 @@ impl AMQP {
             connection,
             channel,
         }
+    }
+
+    pub async fn new_auto() -> AMQP {
+        let config = revolt_config::config().await;
+
+        let connection = Connection::open(&OpenConnectionArguments::new(
+            &config.rabbit.host,
+            config.rabbit.port,
+            &config.rabbit.username,
+            &config.rabbit.password,
+        ))
+        .await
+        .expect("Failed to connect to RabbitMQ");
+
+        let channel = connection
+            .open_channel(None)
+            .await
+            .expect("Failed to open RabbitMQ channel");
+
+        channel
+            .exchange_declare(
+                ExchangeDeclareArguments::new(&config.pushd.exchange, "direct")
+                    .durable(true)
+                    .finish(),
+            )
+            .await
+            .expect("Failed to declare exchange");
+
+        AMQP::new(connection, channel)
     }
 
     pub async fn friend_request_accepted(
@@ -170,6 +200,38 @@ impl AMQP {
             .await
     }
 
+    pub async fn mass_mention_message_sent(
+        &self,
+        server_id: String,
+        payload: Vec<PushNotification>,
+    ) -> Result<(), AMQPError> {
+        let config = revolt_config::config().await;
+
+        let payload = MassMessageSentPayload {
+            notifications: payload,
+            server_id,
+        };
+        let payload = to_string(&payload).unwrap();
+
+        let routing_key = config.pushd.get_mass_mention_routing_key();
+
+        debug!(
+            "Sending mass mention payload on channel {}: {}",
+            routing_key, payload
+        );
+
+        self.channel
+            .basic_publish(
+                BasicProperties::default()
+                    .with_content_type("application/json")
+                    .with_persistence(true)
+                    .finish(),
+                payload.into(),
+                BasicPublishArguments::new(&config.pushd.exchange, routing_key.as_str()),
+            )
+            .await
+    }
+
     pub async fn ack_message(
         &self,
         user_id: String,
@@ -205,6 +267,52 @@ impl AMQP {
                     .finish(),
                 payload.into(),
                 BasicPublishArguments::new(&config.pushd.exchange, &config.pushd.ack_queue),
+            )
+            .await
+    }
+
+    /// # DM Call Update
+    /// Used to send an update about a DM call, eg. start or end of a call.
+    /// Recipients can be used to narrow the scope of recipients, otherwise all recipients will be notified.
+    /// `ended` refers to the ringing period, not necessarily the call itself.
+    pub async fn dm_call_updated(
+        &self,
+        initiator_id: &str,
+        channel_id: &str,
+        started_at: Option<&str>,
+        ended: bool,
+        recipients: Option<Vec<String>>,
+    ) -> Result<(), AMQPError> {
+        let config = revolt_config::config().await;
+
+        let payload = InternalDmCallPayload {
+            payload: DmCallPayload {
+                initiator_id: initiator_id.to_string(),
+                channel_id: channel_id.to_string(),
+                started_at: started_at.map(|f| f.to_string()),
+                ended,
+            },
+            recipients,
+        };
+        let payload = to_string(&payload).unwrap();
+
+        debug!(
+            "Sending dm call update payload on channel {}: {}",
+            config.pushd.get_dm_call_routing_key(),
+            payload
+        );
+
+        self.channel
+            .basic_publish(
+                BasicProperties::default()
+                    .with_content_type("application/json")
+                    .with_persistence(true)
+                    .finish(),
+                payload.into(),
+                BasicPublishArguments::new(
+                    &config.pushd.exchange,
+                    &config.pushd.get_dm_call_routing_key(),
+                ),
             )
             .await
     }

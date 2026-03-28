@@ -1,6 +1,6 @@
 use revolt_database::{
     util::{permissions::DatabasePermissionQuery, reference::Reference},
-    Database, PartialMessage, SystemMessage, User, AMQP,
+    Channel, Database, PartialMessage, SystemMessage, User, AMQP,
 };
 use revolt_models::v0::MessageAuthor;
 use revolt_permissions::{calculate_channel_permissions, ChannelPermission};
@@ -17,15 +17,17 @@ pub async fn message_pin(
     db: &State<Database>,
     amqp: &State<AMQP>,
     user: User,
-    target: Reference,
-    msg: Reference,
+    target: Reference<'_>,
+    msg: Reference<'_>,
 ) -> Result<EmptyResponse> {
     let channel = target.as_channel(db).await?;
 
-    let mut query = DatabasePermissionQuery::new(db, &user).channel(&channel);
-    calculate_channel_permissions(&mut query)
-        .await
-        .throw_if_lacking_channel_permission(ChannelPermission::ManageMessages)?;
+    if !matches!(channel, Channel::DirectMessage { .. }) {
+        let mut query = DatabasePermissionQuery::new(db, &user).channel(&channel);
+        calculate_channel_permissions(&mut query)
+            .await
+            .throw_if_lacking_channel_permission(ChannelPermission::ManageMessages)?;
+    }
 
     let mut message = msg.as_message_in_channel(db, channel.id()).await?;
 
@@ -170,7 +172,7 @@ mod test {
             })
             .await;
 
-        let updated_message = Reference::from_unchecked(message.id)
+        let updated_message = Reference::from_unchecked(&message.id)
             .as_message(&harness.db)
             .await
             .expect("Failed to find updated message");

@@ -1,8 +1,10 @@
 use authifier::models::Session;
+use iso8601_timestamp::Timestamp;
 use revolt_result::Result;
 
 use crate::{FieldsUser, PartialUser, RelationshipStatus, User};
 
+#[cfg(feature = "mongodb")]
 mod mongodb;
 mod reference;
 
@@ -61,4 +63,6 @@ pub trait AbstractUsers: Sync + Send {
 
     /// Remove push subscription for a session by session id (TODO: remove)
     async fn remove_push_subscription_by_session_id(&self, session_id: &str) -> Result<()>;
+
+    async fn update_session_last_seen(&self, session_id: &str, when: Timestamp) -> Result<()>;
 }

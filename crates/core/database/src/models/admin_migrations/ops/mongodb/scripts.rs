@@ -1,17 +1,21 @@
-use std::{collections::HashSet, ops::BitXor, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    ops::BitXor,
+    time::Duration,
+};
 
 use crate::{
     mongodb::{
         bson::{doc, from_bson, from_document, to_document, Bson, DateTime, Document},
         options::FindOptions,
     },
-    AbstractChannels, AbstractServers, Channel, Invite, MongoDb, DISCRIMINATOR_SEARCH_SPACE,
+    AbstractServers, Invite, MongoDb, User, DISCRIMINATOR_SEARCH_SPACE,
 };
-use bson::oid::ObjectId;
+use bson::{oid::ObjectId, to_bson};
 use futures::StreamExt;
+use iso8601_timestamp::Timestamp;
 use rand::seq::SliceRandom;
-use revolt_permissions::DEFAULT_WEBHOOK_PERMISSIONS;
-use revolt_result::{Error, ErrorType};
+use revolt_permissions::{ChannelPermission, DEFAULT_WEBHOOK_PERMISSIONS};
 use serde::{Deserialize, Serialize};
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -21,12 +25,12 @@ struct MigrationInfo {
     revision: i32,
 }
 
-pub const LATEST_REVISION: i32 = 31;
+pub const LATEST_REVISION: i32 = 50; // MUST BE +1 to last migration
 
 pub async fn migrate_database(db: &MongoDb) {
     let migrations = db.col::<Document>("migrations");
     let data = migrations
-        .find_one(None, None)
+        .find_one(doc! {})
         .await
         .expect("Failed to fetch migration data.");
 
@@ -46,7 +50,6 @@ pub async fn migrate_database(db: &MongoDb) {
                         "revision": revision
                     }
                 },
-                None,
             )
             .await
             .expect("Failed to commit migration information.");
@@ -74,7 +77,6 @@ pub async fn run_migrations(db: &MongoDb, revision: i32) -> i32 {
             .update_many(
                 doc! { "attachment": { "$exists": 1_i32 } },
                 doc! { "$set": { "attachment.tag": "attachments", "attachment.size": 0_i32 } },
-                None,
             )
             .await
             .expect("Failed to update messages.");
@@ -83,7 +85,6 @@ pub async fn run_migrations(db: &MongoDb, revision: i32) -> i32 {
             .update_many(
                 doc! {},
                 doc! { "$set": { "tag": "attachments", "size": 0_i32 } },
-                None,
             )
             .await
             .expect("Failed to update attachments.");
@@ -93,7 +94,7 @@ pub async fn run_migrations(db: &MongoDb, revision: i32) -> i32 {
         info!("Running migration [revision 2 / 2021-05-08]: Add servers collection.");
 
         db.db()
-            .create_collection("servers", None)
+            .create_collection("servers")
             .await
             .expect("Failed to create servers collection.");
     }
@@ -103,12 +104,12 @@ pub async fn run_migrations(db: &MongoDb, revision: i32) -> i32 {
 
         let messages = db.col::<Document>("messages");
         let mut cursor = messages
-            .find(
-                doc! {
-                    "attachment": {
-                        "$exists": 1_i32
-                    }
-                },
+            .find(doc! {
+                "attachment": {
+                    "$exists": 1_i32
+                }
+            })
+            .with_options(
                 FindOptions::builder()
                     .projection(doc! {
                         "_id": 1_i32,
@@ -128,19 +129,18 @@ pub async fn run_migrations(db: &MongoDb, revision: i32) -> i32 {
                 .update_one(
                     doc! { "_id": id },
                     doc! { "$unset": { "attachment": 1_i32 }, "$set": { "attachments": attachments } },
-                    None,
                 )
                 .await
                 .unwrap();
         }
 
         db.db()
-            .create_collection("channel_unreads", None)
+            .create_collection("channel_unreads")
             .await
             .expect("Failed to create channel_unreads collection.");
 
         db.db()
-            .create_collection("user_settings", None)
+            .create_collection("user_settings")
             .await
             .expect("Failed to create user_settings collection.");
     }
@@ -149,17 +149,17 @@ pub async fn run_migrations(db: &MongoDb, revision: i32) -> i32 {
         info!("Running migration [revision 4 / 2021-06-01]: Add more server collections.");
 
         db.db()
-            .create_collection("server_members", None)
+            .create_collection("server_members")
             .await
             .expect("Failed to create server_members collection.");
 
         db.db()
-            .create_collection("server_bans", None)
+            .create_collection("server_bans")
             .await
             .expect("Failed to create server_bans collection.");
 
         db.db()
-            .create_collection("channel_invites", None)
+            .create_collection("channel_invites")
             .await
             .expect("Failed to create channel_invites collection.");
     }
@@ -182,7 +182,6 @@ pub async fn run_migrations(db: &MongoDb, revision: i32) -> i32 {
                 doc! {
                     "$set": to_document(&server).unwrap()
                 },
-                None,
             )
             .await
             .expect("Failed to migrate servers.");
@@ -192,20 +191,17 @@ pub async fn run_migrations(db: &MongoDb, revision: i32) -> i32 {
         info!("Running migration [revision 6 / 2021-07-09]: Add message text index.");
 
         db.db()
-            .run_command(
-                doc! {
-                    "createIndexes": "messages",
-                    "indexes": [
-                        {
-                            "key": {
-                                "content": "text"
-                            },
-                            "name": "content"
-                        }
-                    ]
-                },
-                None,
-            )
+            .run_command(doc! {
+                "createIndexes": "messages",
+                "indexes": [
+                    {
+                        "key": {
+                            "content": "text"
+                        },
+                        "name": "content"
+                    }
+                ]
+            })
             .await
             .expect("Failed to create message index.");
     }
@@ -214,7 +210,7 @@ pub async fn run_migrations(db: &MongoDb, revision: i32) -> i32 {
         info!("Running migration [revision 7 / 2021-08-11]: Add message text index.");
 
         db.db()
-            .create_collection("bots", None)
+            .create_collection("bots")
             .await
             .expect("Failed to create bots collection.");
     }
@@ -223,22 +219,15 @@ pub async fn run_migrations(db: &MongoDb, revision: i32) -> i32 {
         info!("Running migration [revision 8 / 2021-09-10]: Update to Authifier version 1.");
 
         db.db()
-            .run_command(
-                doc! {
-                    "dropIndexes": "accounts",
-                    "index": ["email", "email_normalised"]
-                },
-                None,
-            )
+            .run_command(doc! {
+                "dropIndexes": "accounts",
+                "index": ["email", "email_normalised"]
+            })
             .await
             .expect("Failed to delete legacy account indexes.");
 
         let col = db.col::<Document>("sessions");
-        let mut cursor = db
-            .col::<Document>("accounts")
-            .find(doc! {}, None)
-            .await
-            .unwrap();
+        let mut cursor = db.col::<Document>("accounts").find(doc! {}).await.unwrap();
 
         while let Some(doc) = cursor.next().await {
             if let Ok(account) = doc {
@@ -267,7 +256,7 @@ pub async fn run_migrations(db: &MongoDb, revision: i32) -> i32 {
                             doc.insert("subscription", sub);
                         }
 
-                        col.insert_one(doc, None).await.ok();
+                        col.insert_one(doc).await.ok();
                     }
                 } else {
                     info!("Account doesn't have any sessions!");
@@ -288,7 +277,6 @@ pub async fn run_migrations(db: &MongoDb, revision: i32) -> i32 {
                         }
                     }
                 },
-                None,
             )
             .await
             .unwrap();
@@ -297,11 +285,7 @@ pub async fn run_migrations(db: &MongoDb, revision: i32) -> i32 {
     if revision <= 9 {
         info!("Running migration [revision 9 / 2021-09-14]: Switch from last_message to last_message_id.");
 
-        let mut cursor = db
-            .col::<Document>("channels")
-            .find(doc! {}, None)
-            .await
-            .unwrap();
+        let mut cursor = db.col::<Document>("channels").find(doc! {}).await.unwrap();
 
         while let Some(doc) = cursor.next().await {
             if let Ok(channel) = doc {
@@ -340,7 +324,6 @@ pub async fn run_migrations(db: &MongoDb, revision: i32) -> i32 {
                                     "last_message": 1_i32,
                                 }
                             },
-                            None,
                         )
                         .await
                         .unwrap();
@@ -362,7 +345,6 @@ pub async fn run_migrations(db: &MongoDb, revision: i32) -> i32 {
                         "nonce": 1_i32,
                     }
                 },
-                None,
             )
             .await
             .unwrap();
@@ -375,7 +357,6 @@ pub async fn run_migrations(db: &MongoDb, revision: i32) -> i32 {
                         "nonce": 1_i32,
                     }
                 },
-                None,
             )
             .await
             .unwrap();
@@ -385,70 +366,61 @@ pub async fn run_migrations(db: &MongoDb, revision: i32) -> i32 {
         info!("Running migration [revision 11 / 2021-11-14]: Add indexes to database.");
 
         db.db()
-            .run_command(
-                doc! {
-                    "createIndexes": "messages",
-                    "indexes": [
-                        {
-                            "key": {
-                                "channel": 1_i32
-                            },
-                            "name": "channel"
-                        }
-                    ]
-                },
-                None,
-            )
+            .run_command(doc! {
+                "createIndexes": "messages",
+                "indexes": [
+                    {
+                        "key": {
+                            "channel": 1_i32
+                        },
+                        "name": "channel"
+                    }
+                ]
+            })
             .await
             .expect("Failed to create message index.");
 
         db.db()
-            .run_command(
-                doc! {
-                    "createIndexes": "channel_unreads",
-                    "indexes": [
-                        {
-                            "key": {
-                                "_id.channel": 1_i32,
-                                "_id.user": 1_i32,
-                            },
-                            "name": "compound_id"
+            .run_command(doc! {
+                "createIndexes": "channel_unreads",
+                "indexes": [
+                    {
+                        "key": {
+                            "_id.channel": 1_i32,
+                            "_id.user": 1_i32,
                         },
-                        {
-                            "key": {
-                                "_id.user": 1_i32,
-                            },
-                            "name": "user_id"
-                        }
-                    ]
-                },
-                None,
-            )
+                        "name": "compound_id"
+                    },
+                    {
+                        "key": {
+                            "_id.user": 1_i32,
+                        },
+                        "name": "user_id"
+                    }
+                ]
+            })
             .await
             .expect("Failed to create channel_unreads index.");
 
         db.db()
-            .run_command(
-                doc! {
-                    "createIndexes": "server_members",
-                    "indexes": [
-                        {
-                            "key": {
-                                "_id.server": 1_i32,
-                                "_id.user": 1_i32,
-                            },
-                            "name": "compound_id"
+            .run_command(doc! {
+                "createIndexes": "server_members",
+                "indexes": [
+                    {
+                        "key": {
+                            "_id.server": 1_i32,
+                            "_id.user": 1_i32,
                         },
-                        {
-                            "key": {
-                                "_id.user": 1_i32,
-                            },
-                            "name": "user_id"
-                        }
-                    ]
-                },
-                None,
-            )
+                        "name": "compound_id"
+                    },
+                    {
+                        "key": {
+                            "_id.user": 1_i32,
+                        },
+                        "name": "user_id"
+                    }
+                ]
+            })
             .await
             .expect("Failed to create server_members index.");
     }
@@ -457,21 +429,18 @@ pub async fn run_migrations(db: &MongoDb, revision: i32) -> i32 {
         info!("Running migration [revision 12 / 2021-11-21]: Add indexes to database.");
 
         db.db()
-            .run_command(
-                doc! {
-                    "createIndexes": "messages",
-                    "indexes": [
-                        {
-                            "key": {
-                                "channel": 1_i32,
-                                "_id": 1_i32
-                            },
-                            "name": "channel_id_compound"
-                        }
-                    ]
-                },
-                None,
-            )
+            .run_command(doc! {
+                "createIndexes": "messages",
+                "indexes": [
+                    {
+                        "key": {
+                            "channel": 1_i32,
+                            "_id": 1_i32
+                        },
+                        "name": "channel_id_compound"
+                    }
+                ]
+            })
             .await
             .expect("Failed to create message index.");
     }
@@ -485,7 +454,7 @@ pub async fn run_migrations(db: &MongoDb, revision: i32) -> i32 {
         async_std::task::sleep(Duration::from_secs(10)).await;
 
         let servers = db.col::<Document>("servers");
-        let mut cursor = servers.find(doc! {}, None).await.unwrap();
+        let mut cursor = servers.find(doc! {}).await.unwrap();
 
         while let Some(Ok(mut document)) = cursor.next().await {
             let id = document.get_str("_id").unwrap().to_string();
@@ -529,13 +498,13 @@ pub async fn run_migrations(db: &MongoDb, revision: i32) -> i32 {
             }
 
             servers
-                .update_one(doc! { "_id": id }, doc! { "$set": update }, None)
+                .update_one(doc! { "_id": id }, doc! { "$set": update })
                 .await
                 .unwrap();
         }
 
         let channels = db.col::<Document>("channels");
-        let mut cursor = channels.find(doc! {}, None).await.unwrap();
+        let mut cursor = channels.find(doc! {}).await.unwrap();
 
         while let Some(Ok(document)) = cursor.next().await {
             let id = document.get_str("_id").unwrap().to_string();
@@ -575,7 +544,7 @@ pub async fn run_migrations(db: &MongoDb, revision: i32) -> i32 {
             }
 
             channels
-                .update_one(doc! { "_id": id }, update, None)
+                .update_one(doc! { "_id": id }, update)
                 .await
                 .unwrap();
         }
@@ -596,7 +565,6 @@ pub async fn run_migrations(db: &MongoDb, revision: i32) -> i32 {
                         "content": "system"
                     }
                 },
-                None,
             )
             .await
             .unwrap();
@@ -621,25 +589,22 @@ pub async fn run_migrations(db: &MongoDb, revision: i32) -> i32 {
             .unwrap();
 
         db.db()
-            .create_collection("emojis", None)
+            .create_collection("emojis")
             .await
             .expect("Failed to create emojis collection.");
 
         db.db()
-            .run_command(
-                doc! {
-                    "createIndexes": "emojis",
-                    "indexes": [
-                        {
-                            "key": {
-                                "parent.id": 1_i32,
-                            },
-                            "name": "parent_id"
-                        }
-                    ]
-                },
-                None,
-            )
+            .run_command(doc! {
+                "createIndexes": "emojis",
+                "indexes": [
+                    {
+                        "key": {
+                            "parent.id": 1_i32,
+                        },
+                        "name": "parent_id"
+                    }
+                ]
+            })
             .await
             .expect("Failed to create emoji parent index.");
     }
@@ -652,10 +617,9 @@ pub async fn run_migrations(db: &MongoDb, revision: i32) -> i32 {
                 doc! {},
                 doc! {
                     "$set": {
-                        "joined_at": DateTime::now().to_rfc3339_string()
+                        "joined_at": DateTime::now().try_to_rfc3339_string().expect("Failed to convert the date to rfc3339")
                     }
                 },
-                None,
             )
             .await
             .expect("Failed to update server members.");
@@ -666,13 +630,10 @@ pub async fn run_migrations(db: &MongoDb, revision: i32) -> i32 {
 
         if db
             .db()
-            .run_command(
-                doc! {
-                    "dropIndexes": "messages",
-                    "index": ["channel"]
-                },
-                None,
-            )
+            .run_command(doc! {
+                "dropIndexes": "messages",
+                "index": ["channel"]
+            })
             .await
             .is_err()
         {
@@ -680,20 +641,17 @@ pub async fn run_migrations(db: &MongoDb, revision: i32) -> i32 {
         }
 
         db.db()
-            .run_command(
-                doc! {
-                    "createIndexes": "messages",
-                    "indexes": [
-                        {
-                            "key": {
-                                "author": 1_i32,
-                            },
-                            "name": "author"
-                        }
-                    ]
-                },
-                None,
-            )
+            .run_command(doc! {
+                "createIndexes": "messages",
+                "indexes": [
+                    {
+                        "key": {
+                            "author": 1_i32,
+                        },
+                        "name": "author"
+                    }
+                ]
+            })
             .await
             .expect("Failed to create messages author index.");
     }
@@ -703,35 +661,26 @@ pub async fn run_migrations(db: &MongoDb, revision: i32) -> i32 {
             "Running migration [revision 19 / 27-02-2023]: Create report / snapshot collections."
         );
 
-        db.db()
-            .create_collection("safety_reports", None)
-            .await
-            .unwrap();
+        db.db().create_collection("safety_reports").await.unwrap();
 
-        db.db()
-            .create_collection("safety_snapshots", None)
-            .await
-            .unwrap();
+        db.db().create_collection("safety_snapshots").await.unwrap();
     }
 
     if revision <= 20 {
         info!("Running migration [revision 20 / 28-02-2023]: Add index `snapshot.report_id`.");
 
         db.db()
-            .run_command(
-                doc! {
-                    "createIndexes": "safety_snapshots",
-                    "indexes": [
-                        {
-                            "key": {
-                                "report_id": 1_i32
-                            },
-                            "name": "report_id"
-                        }
-                    ]
-                },
-                None,
-            )
+            .run_command(doc! {
+                "createIndexes": "safety_snapshots",
+                "indexes": [
+                    {
+                        "key": {
+                            "report_id": 1_i32
+                        },
+                        "name": "report_id"
+                    }
+                ]
+            })
             .await
             .expect("Failed to create safety snapshot index.");
     }
@@ -739,10 +688,7 @@ pub async fn run_migrations(db: &MongoDb, revision: i32) -> i32 {
     if revision <= 21 {
         info!("Running migration [revision 21 / 31-05-2023]: Add collection `safety_strikes`.");
 
-        db.db()
-            .create_collection("safety_strikes", None)
-            .await
-            .unwrap();
+        db.db().create_collection("safety_strikes").await.unwrap();
     }
 
     if revision <= 22 {
@@ -756,7 +702,6 @@ pub async fn run_migrations(db: &MongoDb, revision: i32) -> i32 {
                         "moderator_id": "01EX2NCWQ0CHS3QJF0FEQS1GR4"
                     }
                 },
-                None,
             )
             .await
             .expect("Failed to update server members.");
@@ -766,13 +711,10 @@ pub async fn run_migrations(db: &MongoDb, revision: i32) -> i32 {
         info!("Running migration [revision 23 / 10-06-2023]: Generate discriminators for users.");
 
         db.db()
-            .run_command(
-                doc! {
-                    "dropIndexes": "users",
-                    "index": "username"
-                },
-                None,
-            )
+            .run_command(doc! {
+                "dropIndexes": "users",
+                "index": "username"
+            })
             .await
             .expect("Failed to drop existing username index.");
 
@@ -787,7 +729,7 @@ pub async fn run_migrations(db: &MongoDb, revision: i32) -> i32 {
 
         let users: Vec<UserInformation> = db
             .col::<UserInformation>("users")
-            .find(doc! {}, None)
+            .find(doc! {})
             .await
             .unwrap()
             .map(|doc| doc.expect("id and username"))
@@ -839,7 +781,6 @@ pub async fn run_migrations(db: &MongoDb, revision: i32) -> i32 {
                                 "discriminator": discriminator
                             }
                         },
-                        None,
                     )
                     .await
                     .unwrap();
@@ -887,7 +828,6 @@ pub async fn run_migrations(db: &MongoDb, revision: i32) -> i32 {
                                 "display_name": &info.username
                             }
                         },
-                        None,
                     )
                     .await
                     .unwrap();
@@ -898,43 +838,37 @@ pub async fn run_migrations(db: &MongoDb, revision: i32) -> i32 {
     if revision <= 24 {
         info!("Running migration [revision 24 / 09-06-2023]: Add collection `channel_webhooks` if not exists, update users index.");
 
-        db.db()
-            .create_collection("channel_webhooks", None)
-            .await
-            .ok();
+        db.db().create_collection("channel_webhooks").await.ok();
 
         db.db()
-            .run_command(
-                doc! {
-                    "createIndexes": "users",
-                    "indexes": [
-                        {
-                            "key": {
-                                "username": 1_i32
-                            },
-                            "name": "username",
-                            "unique": false,
-                            "collation": {
-                                "locale": "en",
-                                "strength": 2_i32
-                            }
+            .run_command(doc! {
+                "createIndexes": "users",
+                "indexes": [
+                    {
+                        "key": {
+                            "username": 1_i32
                         },
-                        {
-                            "key": {
-                                "username": 1_i32,
-                                "discriminator": 1_i32
-                            },
-                            "name": "username_discriminator",
-                            "unique": true,
-                            "collation": {
-                                "locale": "en",
-                                "strength": 2_i32
-                            }
+                        "name": "username",
+                        "unique": false,
+                        "collation": {
+                            "locale": "en",
+                            "strength": 2_i32
                         }
-                    ]
-                },
-                None,
-            )
+                    },
+                    {
+                        "key": {
+                            "username": 1_i32,
+                            "discriminator": 1_i32
+                        },
+                        "name": "username_discriminator",
+                        "unique": true,
+                        "collation": {
+                            "locale": "en",
+                            "strength": 2_i32
+                        }
+                    }
+                ]
+            })
             .await
             .expect("Failed to create username index.");
     };
@@ -950,7 +884,6 @@ pub async fn run_migrations(db: &MongoDb, revision: i32) -> i32 {
                         "permissions": *DEFAULT_WEBHOOK_PERMISSIONS as i64
                     }
                 },
-                None,
             )
             .await
             .expect("Failed to update webhooks.");
@@ -959,33 +892,28 @@ pub async fn run_migrations(db: &MongoDb, revision: i32) -> i32 {
     if revision <= 25 {
         info!("Running migration [revision 25 / 15-06-2023]: Add collection `ratelimit_events` with index.");
 
-        db.db()
-            .create_collection("ratelimit_events", None)
-            .await
-            .ok();
+        db.db().create_collection("ratelimit_events").await.ok();
 
         db.db()
-            .run_command(
-                doc! {
-                    "createIndexes": "ratelimit_events",
-                    "indexes": [
-                        {
-                            "key": {
-                                "_id": 1_i32,
-                                "target_id": 1_i32,
-                                "event_type": 1_i32,
-                            },
-                            "name": "compound_key"
-                        }
-                    ]
-                },
-                None,
-            )
+            .run_command(doc! {
+                "createIndexes": "ratelimit_events",
+                "indexes": [
+                    {
+                        "key": {
+                            "_id": 1_i32,
+                            "target_id": 1_i32,
+                            "event_type": 1_i32,
+                        },
+                        "name": "compound_key"
+                    }
+                ]
+            })
             .await
             .expect("Failed to create ratelimit_events index.");
     }
 
     if revision <= 26 {
+        // Need to migrate fields on attachments, change `user_id`, `object_id`, etc to `parent`.
         info!("Running migration [revision 26 / 15-05-2024]: fix invites being incorrectly serialized with wrong enum tagging.");
 
         auto_derived!(
@@ -1016,12 +944,9 @@ pub async fn run_migrations(db: &MongoDb, revision: i32) -> i32 {
         let invites = db
             .db()
             .collection::<Outer>("channel_invites")
-            .find(
-                doc! {
-                    "type": { "$exists": false }
-                },
-                None,
-            )
+            .find(doc! {
+                "type": { "$exists": false }
+            })
             .await
             .expect("failed to find invites")
             .filter_map(|s| async { s.ok() })
@@ -1055,18 +980,15 @@ pub async fn run_migrations(db: &MongoDb, revision: i32) -> i32 {
         if !invites.is_empty() {
             db.db()
                 .collection("channel_invites")
-                .insert_many(invites, None)
+                .insert_many(invites)
                 .await
                 .expect("failed to insert corrected invite");
 
             db.db()
                 .collection::<Outer>("channel_invites")
-                .delete_many(
-                    doc! {
-                        "type": { "$exists": false }
-                    },
-                    None,
-                )
+                .delete_many(doc! {
+                    "type": { "$exists": false }
+                })
                 .await
                 .expect("failed to find invites");
         }
@@ -1076,21 +998,18 @@ pub async fn run_migrations(db: &MongoDb, revision: i32) -> i32 {
         info!("Running migration [revision 27 / 21-07-2024]: create message pinned index.");
 
         db.db()
-            .run_command(
-                doc! {
-                    "createIndexes": "messages",
-                    "indexes": [
-                        {
-                            "key": {
-                                "channel": 1_i32,
-                                "pinned": 1_i32
-                            },
-                            "name": "channel_pinned_compound"
-                        }
-                    ]
-                },
-                None,
-            )
+            .run_command(doc! {
+                "createIndexes": "messages",
+                "indexes": [
+                    {
+                        "key": {
+                            "channel": 1_i32,
+                            "pinned": 1_i32
+                        },
+                        "name": "channel_pinned_compound"
+                    }
+                ]
+            })
             .await
             .expect("Failed to create message index.");
     }
@@ -1098,44 +1017,35 @@ pub async fn run_migrations(db: &MongoDb, revision: i32) -> i32 {
     if revision <= 28 {
         info!("Running migration [revision 28 / 10-09-2024]: Add support for new Autumn.");
 
-        db.db()
-            .create_collection("attachment_hashes", None)
-            .await
-            .ok();
+        db.db().create_collection("attachment_hashes").await.ok();
 
         db.db()
-            .run_command(
-                doc! {
-                    "createIndexes": "attachments",
-                    "indexes": [
-                        {
-                            "key": {
-                                "hash": 1_i32
-                            },
-                            "name": "hash"
-                        }
-                    ]
-                },
-                None,
-            )
+            .run_command(doc! {
+                "createIndexes": "attachments",
+                "indexes": [
+                    {
+                        "key": {
+                            "hash": 1_i32
+                        },
+                        "name": "hash"
+                    }
+                ]
+            })
             .await
             .expect("Failed to create attachments index.");
 
         db.db()
-            .run_command(
-                doc! {
-                    "createIndexes": "attachment_hashes",
-                    "indexes": [
-                        {
-                            "key": {
-                                "processed_hash": 1_i32
-                            },
-                            "name": "processed_hash"
-                        }
-                    ]
-                },
-                None,
-            )
+            .run_command(doc! {
+                "createIndexes": "attachment_hashes",
+                "indexes": [
+                    {
+                        "key": {
+                            "processed_hash": 1_i32
+                        },
+                        "name": "processed_hash"
+                    }
+                ]
+            })
             .await
             .expect("Failed to create attachment_hashes index.");
     }
@@ -1146,20 +1056,17 @@ pub async fn run_migrations(db: &MongoDb, revision: i32) -> i32 {
         info!("Running migration [revision 30 / 29-09-2024]: Add index for used_for.id to attachments.");
 
         db.db()
-            .run_command(
-                doc! {
-                    "createIndexes": "attachments",
-                    "indexes": [
-                        {
-                            "key": {
-                                "used_for.id": 1_i32
-                            },
-                            "name": "used_for_id"
-                        }
-                    ]
-                },
-                None,
-            )
+            .run_command(doc! {
+                "createIndexes": "attachments",
+                "indexes": [
+                    {
+                        "key": {
+                            "used_for.id": 1_i32
+                        },
+                        "name": "used_for_id"
+                    }
+                ]
+            })
             .await
             .expect("Failed to create attachments index.");
     }
@@ -1173,10 +1080,18 @@ pub async fn run_migrations(db: &MongoDb, revision: i32) -> i32 {
             channel_id: String,
         }
 
+        #[allow(clippy::enum_variant_names)]
+        #[derive(serde::Serialize, serde::Deserialize)]
+        enum Channel {
+            Group { owner: String },
+            TextChannel { server: String },
+            VoiceChannel { server: String }
+        }
+
         let webhooks = db
             .db()
             .collection::<WebhookShell>("channel_webhooks")
-            .find(doc! {}, None)
+            .find(doc! {})
             .await
             .expect("webhooks")
             .filter_map(|s| async { s.ok() })
@@ -1184,8 +1099,8 @@ pub async fn run_migrations(db: &MongoDb, revision: i32) -> i32 {
             .await;
 
         for webhook in webhooks {
-            match db.fetch_channel(&webhook.channel_id).await {
-                Ok(channel) => {
+            match db.col::<Channel>("channels").find_one(doc! { "_id": &webhook.channel_id }).await.unwrap() {
+                Some(channel) => {
                     let creator_id = match channel {
                         Channel::Group { owner, .. } => owner,
                         Channel::TextChannel { server, .. }
@@ -1193,7 +1108,6 @@ pub async fn run_migrations(db: &MongoDb, revision: i32) -> i32 {
                             let server = db.fetch_server(&server).await.expect("server");
                             server.owner
                         }
-                        _ => unreachable!("not server or group channel!"),
                     };
 
                     db.db()
@@ -1207,25 +1121,190 @@ pub async fn run_migrations(db: &MongoDb, revision: i32) -> i32 {
                                     "creator_id": creator_id
                                 }
                             },
-                            None,
                         )
                         .await
                         .expect("update webhook");
                 }
-                Err(Error {
-                    error_type: ErrorType::NotFound,
-                    ..
-                }) => {
+                None => {
                     db.db()
                         .collection::<WebhookShell>("channel_webhooks")
-                        .delete_one(doc! { "_id": webhook._id }, None)
+                        .delete_one(doc! { "_id": webhook._id })
                         .await
                         .expect("failed to delete invalid webhook");
                 }
-                Err(err) => panic!("{err:?}"),
             }
         }
     }
+
+    if revision <= 32 {
+        info!(
+            "Running migration [revision 32 / 12-05-2025]: (Authifier) Add last_seen to sessions."
+        );
+
+        let db = authifier::Database::MongoDb(authifier::database::MongoDb(db.db()));
+        db.run_migration(authifier::Migration::M2025_02_20AddLastSeenToSession)
+            .await
+            .unwrap();
+    }
+
+    if revision <= 40 {
+        info!(
+            "Running migration [revision |> 40 / 30-05-2025]: Set last policy acknowlegement date to now and create policy changes collection."
+        );
+
+        db.db()
+            .create_collection("policy_changes")
+            .await
+            .expect("Failed to create policy_changes collection.");
+
+        db.db()
+            .collection::<User>("users")
+            .update_many(
+                doc! {},
+                doc! {
+                    "$set": {
+                        "last_acknowledged_policy_change": to_bson(&Timestamp::now_utc())
+                            .expect("failed to serialise timestamp")
+                    }
+                },
+            )
+            .await
+            .expect("failed to update users");
+    }
+
+    if revision <= 43 {
+        info!(
+            "Running migration [revision 43 / 05-06-2025]: convert role ranks to uniform numbers."
+        );
+
+        #[derive(Serialize, Deserialize, Clone)]
+        struct Role {
+            pub rank: i64,
+        }
+
+        #[derive(Serialize, Deserialize, Clone)]
+        struct Server {
+            #[serde(rename = "_id")]
+            pub id: String,
+            #[serde(default = "HashMap::<String, Role>::new")]
+            pub roles: HashMap<String, Role>,
+        }
+
+        let mut servers = db
+            .db()
+            .collection::<Server>("servers")
+            .find(doc! {
+                "roles": {
+                    "$exists": true,
+                    "$ne": []
+                }
+            })
+            .await
+            .unwrap()
+            .filter_map(|s| async { s.ok() })
+            .boxed();
+
+        while let Some(server) = servers.next().await {
+            let mut ordered_roles = server.roles.clone().into_iter().collect::<Vec<_>>();
+            ordered_roles.sort_by(|(_, role_a), (_, role_b)| role_a.rank.cmp(&role_b.rank));
+            let ordered_roles = ordered_roles
+                .into_iter()
+                .map(|(id, _)| id)
+                .collect::<Vec<_>>();
+
+            let mut doc = doc! {};
+
+            for id in server.roles.keys() {
+                doc.insert(
+                    format!("roles.{id}.rank"),
+                    ordered_roles.iter().position(|x| id == x).unwrap() as i64,
+                );
+            }
+
+            db.db()
+                .collection::<Server>("servers")
+                .update_one(doc! { "_id": &server.id }, doc! { "$set": doc })
+                .await
+                .unwrap();
+        }
+    }
+
+    if revision <= 46 {
+        info!("Running migration [revision 46 / 29-04-2025]: Convert all `VoiceChannel`'s into `TextChannel`");
+
+        db.col::<Document>("channels")
+            .update_many(
+                doc! { "channel_type": "VoiceChannel" },
+                doc! {
+                    "$set": {
+                        "channel_type": "TextChannel",
+                        "voice": {}
+                    }
+                }
+            )
+            .await
+            .expect("Failed to update voice channels");
+    };
+
+    if revision <= 48 {
+        info!("Running migration [revision 48 / 22-10-2025]: Add Video + Listen to default permissions");
+
+        db.col::<Document>("servers")
+            .update_many(
+                doc! { },
+                doc! {
+                    "$bit": {
+                        "default_permissions": {
+                            "or": (ChannelPermission::Video + ChannelPermission::Speak + ChannelPermission::Listen) as i64
+                        },
+                    }
+                }
+            )
+            .await
+            .expect("Failed to update default_permissions");
+    };
+
+    if revision <= 49 {
+        info!("Running migration [revision 49 / 12-12-2025]: Add _id key to roles");
+
+        #[derive(Serialize, Deserialize, Clone)]
+        struct Server {
+            #[serde(rename = "_id")]
+            pub id: String,
+            #[serde(default = "HashMap::<String, Document>::new")]
+            pub roles: HashMap<String, Document>,
+        }
+
+        let mut servers = db
+            .db()
+            .collection::<Server>("servers")
+            .find(doc! {
+                "roles": {
+                    "$exists": true,
+                    "$ne": {}
+                }
+            })
+            .await
+            .unwrap()
+            .map(|res| res.expect("Failed to decode Server { id, roles }"));
+
+        while let Some(server) = servers.next().await {
+            let mut doc = doc! {};
+
+            for id in server.roles.keys() {
+                doc.insert(
+                    format!("roles.{id}._id"),
+                    id,
+                );
+            }
+
+            db.db()
+                .collection::<Server>("servers")
+                .update_one(doc! { "_id": &server.id }, doc! { "$set": doc })
+                .await
+                .unwrap();
+        }
+    };
 
     // Reminder to update LATEST_REVISION when adding new migrations.
     LATEST_REVISION.max(revision)

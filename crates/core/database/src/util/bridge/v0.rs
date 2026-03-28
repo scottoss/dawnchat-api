@@ -1,7 +1,8 @@
+use iso8601_timestamp::Timestamp;
 use revolt_models::v0::*;
 use revolt_permissions::{calculate_user_permissions, UserPermission};
 
-use crate::{util::permissions::DatabasePermissionQuery, Database, FileUsedFor};
+use crate::{util::permissions::DatabasePermissionQuery, Database};
 
 impl crate::Bot {
     pub fn into_public_bot(self, user: crate::User) -> PublicBot {
@@ -14,8 +15,7 @@ impl crate::Bot {
             avatar: user.avatar.map(|x| x.id).unwrap_or_default(),
             description: user
                 .profile
-                .map(|profile| profile.content)
-                .flatten()
+                .and_then(|profile| profile.content)
                 .unwrap_or_default(),
         }
     }
@@ -143,6 +143,7 @@ impl From<crate::FieldsWebhook> for FieldsWebhook {
 }
 
 impl From<crate::Channel> for Channel {
+    #[allow(deprecated)]
     fn from(value: crate::Channel) -> Self {
         match value {
             crate::Channel::SavedMessages { id, user } => Channel::SavedMessages { id, user },
@@ -188,6 +189,8 @@ impl From<crate::Channel> for Channel {
                 default_permissions,
                 role_permissions,
                 nsfw,
+                voice,
+                slowmode
             } => Channel::TextChannel {
                 id,
                 server,
@@ -198,31 +201,15 @@ impl From<crate::Channel> for Channel {
                 default_permissions,
                 role_permissions,
                 nsfw,
-            },
-            crate::Channel::VoiceChannel {
-                id,
-                server,
-                name,
-                description,
-                icon,
-                default_permissions,
-                role_permissions,
-                nsfw,
-            } => Channel::VoiceChannel {
-                id,
-                server,
-                name,
-                description,
-                icon: icon.map(|file| file.into()),
-                default_permissions,
-                role_permissions,
-                nsfw,
+                voice: voice.map(|voice| voice.into()),
+                slowmode
             },
         }
     }
 }
 
 impl From<Channel> for crate::Channel {
+    #[allow(deprecated)]
     fn from(value: Channel) -> crate::Channel {
         match value {
             Channel::SavedMessages { id, user } => crate::Channel::SavedMessages { id, user },
@@ -268,6 +255,8 @@ impl From<Channel> for crate::Channel {
                 default_permissions,
                 role_permissions,
                 nsfw,
+                voice,
+                slowmode
             } => crate::Channel::TextChannel {
                 id,
                 server,
@@ -278,25 +267,8 @@ impl From<Channel> for crate::Channel {
                 default_permissions,
                 role_permissions,
                 nsfw,
-            },
-            Channel::VoiceChannel {
-                id,
-                server,
-                name,
-                description,
-                icon,
-                default_permissions,
-                role_permissions,
-                nsfw,
-            } => crate::Channel::VoiceChannel {
-                id,
-                server,
-                name,
-                description,
-                icon: icon.map(|file| file.into()),
-                default_permissions,
-                role_permissions,
-                nsfw,
+                voice: voice.map(|voice| voice.into()),
+                slowmode
             },
         }
     }
@@ -315,6 +287,8 @@ impl From<crate::PartialChannel> for PartialChannel {
             role_permissions: value.role_permissions,
             default_permissions: value.default_permissions,
             last_message_id: value.last_message_id,
+            voice: value.voice.map(|voice| voice.into()),
+            slowmode: value.slowmode,
         }
     }
 }
@@ -332,6 +306,8 @@ impl From<PartialChannel> for crate::PartialChannel {
             role_permissions: value.role_permissions,
             default_permissions: value.default_permissions,
             last_message_id: value.last_message_id,
+            voice: value.voice.map(|voice| voice.into()),
+            slowmode: value.slowmode
         }
     }
 }
@@ -342,6 +318,7 @@ impl From<FieldsChannel> for crate::FieldsChannel {
             FieldsChannel::Description => crate::FieldsChannel::Description,
             FieldsChannel::Icon => crate::FieldsChannel::Icon,
             FieldsChannel::DefaultPermissions => crate::FieldsChannel::DefaultPermissions,
+            FieldsChannel::Voice => crate::FieldsChannel::Voice,
         }
     }
 }
@@ -352,6 +329,7 @@ impl From<crate::FieldsChannel> for FieldsChannel {
             crate::FieldsChannel::Description => FieldsChannel::Description,
             crate::FieldsChannel::Icon => FieldsChannel::Icon,
             crate::FieldsChannel::DefaultPermissions => FieldsChannel::DefaultPermissions,
+            crate::FieldsChannel::Voice => FieldsChannel::Voice,
         }
     }
 }
@@ -434,9 +412,14 @@ impl From<crate::Metadata> for Metadata {
         match value {
             crate::Metadata::File => Metadata::File,
             crate::Metadata::Text => Metadata::Text,
-            crate::Metadata::Image { width, height } => Metadata::Image {
+            crate::Metadata::Image {
+                width,
+                height,
+                animated,
+            } => Metadata::Image {
                 width: width as usize,
                 height: height as usize,
+                animated: animated as bool,
             },
             crate::Metadata::Video { width, height } => Metadata::Video {
                 width: width as usize,
@@ -452,9 +435,14 @@ impl From<Metadata> for crate::Metadata {
         match value {
             Metadata::File => crate::Metadata::File,
             Metadata::Text => crate::Metadata::Text,
-            Metadata::Image { width, height } => crate::Metadata::Image {
+            Metadata::Image {
+                width,
+                height,
+                animated,
+            } => crate::Metadata::Image {
                 width: width as isize,
                 height: height as isize,
+                animated,
             },
             Metadata::Video { width, height } => crate::Metadata::Video {
                 width: width as isize,
@@ -483,11 +471,12 @@ impl crate::Message {
             edited: self.edited,
             embeds: self.embeds,
             mentions: self.mentions,
+            role_mentions: self.role_mentions,
             replies: self.replies,
             reactions: self.reactions,
             interactions: self.interactions.into(),
             masquerade: self.masquerade.map(Into::into),
-            flags: self.flags.map(|flags| flags as u32).unwrap_or_default(),
+            flags: self.flags.unwrap_or_default(),
             pinned: self.pinned,
         }
     }
@@ -511,11 +500,12 @@ impl From<crate::PartialMessage> for PartialMessage {
             edited: value.edited,
             embeds: value.embeds,
             mentions: value.mentions,
+            role_mentions: value.role_mentions,
             replies: value.replies,
             reactions: value.reactions,
             interactions: value.interactions.map(Into::into),
             masquerade: value.masquerade.map(Into::into),
-            flags: value.flags.map(|flags| flags as u32),
+            flags: value.flags,
             pinned: value.pinned,
         }
     }
@@ -541,6 +531,7 @@ impl From<crate::SystemMessage> for SystemMessage {
             crate::SystemMessage::UserRemove { id, by } => Self::UserRemove { id, by },
             crate::SystemMessage::MessagePinned { id, by } => Self::MessagePinned { id, by },
             crate::SystemMessage::MessageUnpinned { id, by } => Self::MessageUnpinned { id, by },
+            crate::SystemMessage::CallStarted { by, finished_at } => Self::CallStarted { by, finished_at }
         }
     }
 }
@@ -595,6 +586,17 @@ impl From<Masquerade> for crate::Masquerade {
     }
 }
 
+impl From<crate::PolicyChange> for PolicyChange {
+    fn from(value: crate::PolicyChange) -> Self {
+        PolicyChange {
+            created_time: value.created_time,
+            effective_time: value.effective_time,
+            description: value.description,
+            url: value.url,
+        }
+    }
+}
+
 impl From<crate::Report> for Report {
     fn from(value: crate::Report) -> Self {
         Report {
@@ -626,6 +628,8 @@ impl From<crate::Member> for Member {
             avatar: value.avatar.map(|f| f.into()),
             roles: value.roles,
             timeout: value.timeout,
+            can_publish: value.can_publish,
+            can_receive: value.can_receive,
         }
     }
 }
@@ -639,6 +643,8 @@ impl From<Member> for crate::Member {
             avatar: value.avatar.map(|f| f.into()),
             roles: value.roles,
             timeout: value.timeout,
+            can_publish: value.can_publish,
+            can_receive: value.can_receive,
         }
     }
 }
@@ -652,6 +658,8 @@ impl From<crate::PartialMember> for PartialMember {
             avatar: value.avatar.map(|f| f.into()),
             roles: value.roles,
             timeout: value.timeout,
+            can_publish: value.can_publish,
+            can_receive: value.can_receive,
         }
     }
 }
@@ -665,6 +673,8 @@ impl From<PartialMember> for crate::PartialMember {
             avatar: value.avatar.map(|f| f.into()),
             roles: value.roles,
             timeout: value.timeout,
+            can_publish: value.can_publish,
+            can_receive: value.can_receive,
         }
     }
 }
@@ -694,6 +704,10 @@ impl From<crate::FieldsMember> for FieldsMember {
             crate::FieldsMember::Nickname => FieldsMember::Nickname,
             crate::FieldsMember::Roles => FieldsMember::Roles,
             crate::FieldsMember::Timeout => FieldsMember::Timeout,
+            crate::FieldsMember::CanReceive => FieldsMember::CanReceive,
+            crate::FieldsMember::CanPublish => FieldsMember::CanPublish,
+            crate::FieldsMember::JoinedAt => FieldsMember::JoinedAt,
+            crate::FieldsMember::VoiceChannel => FieldsMember::VoiceChannel,
         }
     }
 }
@@ -705,6 +719,10 @@ impl From<FieldsMember> for crate::FieldsMember {
             FieldsMember::Nickname => crate::FieldsMember::Nickname,
             FieldsMember::Roles => crate::FieldsMember::Roles,
             FieldsMember::Timeout => crate::FieldsMember::Timeout,
+            FieldsMember::CanReceive => crate::FieldsMember::CanReceive,
+            FieldsMember::CanPublish => crate::FieldsMember::CanPublish,
+            FieldsMember::JoinedAt => crate::FieldsMember::JoinedAt,
+            FieldsMember::VoiceChannel => crate::FieldsMember::VoiceChannel,
         }
     }
 }
@@ -896,6 +914,7 @@ impl From<SystemMessageChannels> for crate::SystemMessageChannels {
 impl From<crate::Role> for Role {
     fn from(value: crate::Role) -> Self {
         Role {
+            id: value.id,
             name: value.name,
             permissions: value.permissions,
             colour: value.colour,
@@ -908,6 +927,7 @@ impl From<crate::Role> for Role {
 impl From<Role> for crate::Role {
     fn from(value: Role) -> crate::Role {
         crate::Role {
+            id: value.id,
             name: value.name,
             permissions: value.permissions,
             colour: value.colour,
@@ -920,6 +940,7 @@ impl From<Role> for crate::Role {
 impl From<crate::PartialRole> for PartialRole {
     fn from(value: crate::PartialRole) -> Self {
         PartialRole {
+            id: value.id,
             name: value.name,
             permissions: value.permissions,
             colour: value.colour,
@@ -932,6 +953,7 @@ impl From<crate::PartialRole> for PartialRole {
 impl From<PartialRole> for crate::PartialRole {
     fn from(value: PartialRole) -> crate::PartialRole {
         crate::PartialRole {
+            id: value.id,
             name: value.name,
             permissions: value.permissions,
             colour: value.colour,
@@ -992,6 +1014,8 @@ impl crate::User {
             (RelationshipStatus::None, false)
         };
 
+        let badges = self.get_badges().await;
+
         User {
             username: self.username,
             discriminator: self.discriminator,
@@ -1010,7 +1034,7 @@ impl crate::User {
             } else {
                 vec![]
             },
-            badges: self.badges.unwrap_or_default() as u32,
+            badges,
             online: can_see_profile
                 && revolt_presence::is_online(&self.id).await
                 && !matches!(
@@ -1021,7 +1045,7 @@ impl crate::User {
                     })
                 ),
             status: if can_see_profile {
-                self.status.map(|status| status.into())
+                self.status.and_then(|status| status.into(true))
             } else {
                 None
             },
@@ -1036,7 +1060,7 @@ impl crate::User {
     /// Convert user object into user model assuming mutual connection
     ///
     /// Relations will never be included, i.e. when we process ourselves
-    pub fn into_known<'a, P>(self, perspective: P, is_online: bool) -> User
+    pub async fn into_known<'a, P>(self, perspective: P, is_online: bool) -> User
     where
         P: Into<Option<&'a crate::User>>,
     {
@@ -1066,13 +1090,15 @@ impl crate::User {
             (RelationshipStatus::None, false)
         };
 
+        let badges = self.get_badges().await;
+
         User {
             username: self.username,
             discriminator: self.discriminator,
             display_name: self.display_name,
             avatar: self.avatar.map(|file| file.into()),
             relations: vec![],
-            badges: self.badges.unwrap_or_default() as u32,
+            badges,
             online: can_see_profile
                 && is_online
                 && !matches!(
@@ -1083,7 +1109,7 @@ impl crate::User {
                     })
                 ),
             status: if can_see_profile {
-                self.status.map(|status| status.into())
+                self.status.and_then(|status| status.into(true))
             } else {
                 None
             },
@@ -1096,14 +1122,16 @@ impl crate::User {
     }
 
     /// Convert user object into user model without presence information
-    pub fn into_known_static<'a>(self, is_online: bool) -> User {
+    pub async fn into_known_static(self, is_online: bool) -> User {
+        let badges = self.get_badges().await;
+
         User {
             username: self.username,
             discriminator: self.discriminator,
             display_name: self.display_name,
             avatar: self.avatar.map(|file| file.into()),
             relations: vec![],
-            badges: self.badges.unwrap_or_default() as u32,
+            badges,
             online: is_online
                 && !matches!(
                     self.status,
@@ -1112,7 +1140,7 @@ impl crate::User {
                         ..
                     })
                 ),
-            status: self.status.map(|status| status.into()),
+            status: self.status.and_then(|status| status.into(true)),
             flags: self.flags.unwrap_or_default() as u32,
             privileged: self.privileged,
             bot: self.bot.map(|bot| bot.into()),
@@ -1122,6 +1150,8 @@ impl crate::User {
     }
 
     pub async fn into_self(self, force_online: bool) -> User {
+        let badges = self.get_badges().await;
+
         User {
             username: self.username,
             discriminator: self.discriminator,
@@ -1136,7 +1166,7 @@ impl crate::User {
                         .collect()
                 })
                 .unwrap_or_default(),
-            badges: self.badges.unwrap_or_default() as u32,
+            badges,
             online: (force_online || revolt_presence::is_online(&self.id).await)
                 && !matches!(
                     self.status,
@@ -1145,7 +1175,7 @@ impl crate::User {
                         ..
                     })
                 ),
-            status: self.status.map(|status| status.into()),
+            status: self.status.and_then(|status| status.into(true)),
             flags: self.flags.unwrap_or_default() as u32,
             privileged: self.privileged,
             bot: self.bot.map(|bot| bot.into()),
@@ -1178,6 +1208,7 @@ impl From<User> for crate::User {
             privileged: value.privileged,
             bot: value.bot.map(Into::into),
             suspended_until: None,
+            last_acknowledged_policy_change: Timestamp::UNIX_EPOCH,
         }
     }
 }
@@ -1196,7 +1227,7 @@ impl From<crate::PartialUser> for PartialUser {
                     .collect()
             }),
             badges: value.badges.map(|badges| badges as u32),
-            status: value.status.map(|status| status.into()),
+            status: value.status.and_then(|status| status.into(false)),
             flags: value.flags.map(|flags| flags as u32),
             privileged: value.privileged,
             bot: value.bot.map(|bot| bot.into()),
@@ -1285,11 +1316,23 @@ impl From<Presence> for crate::Presence {
     }
 }
 
-impl From<crate::UserStatus> for UserStatus {
-    fn from(value: crate::UserStatus) -> Self {
-        UserStatus {
-            text: value.text,
-            presence: value.presence.map(|presence| presence.into()),
+impl crate::UserStatus {
+    fn into(self, discard_invisible: bool) -> Option<UserStatus> {
+        let status = UserStatus {
+            text: self.text,
+            presence: self.presence.and_then(|presence| {
+                if discard_invisible && presence == crate::Presence::Invisible {
+                    None
+                } else {
+                    Some(presence.into())
+                }
+            }),
+        };
+
+        if status.text.is_none() && status.presence.is_none() {
+            None
+        } else {
+            Some(status)
         }
     }
 }
@@ -1348,6 +1391,22 @@ impl From<FieldsMessage> for crate::FieldsMessage {
     fn from(value: FieldsMessage) -> Self {
         match value {
             FieldsMessage::Pinned => crate::FieldsMessage::Pinned,
+        }
+    }
+}
+
+impl From<VoiceInformation> for crate::VoiceInformation {
+    fn from(value: VoiceInformation) -> Self {
+        crate::VoiceInformation {
+            max_users: value.max_users
+        }
+    }
+}
+
+impl From<crate::VoiceInformation> for VoiceInformation {
+    fn from(value: crate::VoiceInformation) -> Self {
+        VoiceInformation {
+            max_users: value.max_users
         }
     }
 }

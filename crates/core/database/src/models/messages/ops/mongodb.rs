@@ -1,8 +1,12 @@
 use bson::{to_bson, Document};
 use futures::try_join;
+use futures::StreamExt;
 use mongodb::options::FindOptions;
 use revolt_models::v0::MessageSort;
 use revolt_result::Result;
+use std::collections::{HashMap, HashSet};
+use std::time::SystemTime;
+use ulid::Ulid;
 
 use crate::{
     AppendMessage, DocumentId, FieldsMessage, IntoDocumentPath, Message, MessageQuery,
@@ -228,7 +232,6 @@ impl AbstractMessages for MongoDb {
                     "_id": id
                 },
                 query,
-                None,
             )
             .await
             .map(|_| ())
@@ -247,7 +250,6 @@ impl AbstractMessages for MongoDb {
                         format!("reactions.{emoji}"): user
                     }
                 },
-                None,
             )
             .await
             .map(|_| ())
@@ -266,7 +268,6 @@ impl AbstractMessages for MongoDb {
                         format!("reactions.{emoji}"): user
                     }
                 },
-                None,
             )
             .await
             .map(|_| ())
@@ -285,7 +286,6 @@ impl AbstractMessages for MongoDb {
                         format!("reactions.{emoji}"): 1
                     }
                 },
-                None,
             )
             .await
             .map(|_| ())
@@ -300,18 +300,121 @@ impl AbstractMessages for MongoDb {
     /// Delete messages from a channel by their ids and corresponding channel id
     async fn delete_messages(&self, channel: &str, ids: &[String]) -> Result<()> {
         self.col::<Document>(COL)
-            .delete_many(
-                doc! {
-                    "channel": channel,
-                    "_id": {
-                        "$in": ids
-                    }
-                },
-                None,
-            )
+            .delete_many(doc! {
+                "channel": channel,
+                "_id": {
+                    "$in": ids
+                }
+            })
             .await
             .map(|_| ())
             .map_err(|_| create_database_error!("delete_many", COL))
+    }
+
+    /// Delete all messages from a specific author in a server from a certain ULID onwards
+    async fn delete_messages_by_author_since(
+        &self,
+        channels: &[String],
+        author: &str,
+        since: SystemTime,
+    ) -> Result<HashMap<String, Vec<String>>> {
+        let threshold_ulid = Ulid::from_datetime(since).to_string();
+
+        let filter = doc! {
+            "author": author,
+            "channel": { "$in": channels },
+            "_id": { "$gte": &threshold_ulid }
+        };
+
+        let pipeline = vec![
+            doc! { "$match": filter.clone() },
+            doc! {
+                "$project": {
+                    "channel": 1_i32,
+                    "message_id": "$_id",
+                    "attachment_ids": {
+                        "$map": {
+                            "input": { "$ifNull": ["$attachments", Vec::<bson::Bson>::new()] },
+                            "as": "a",
+                            "in": "$$a._id"
+                        }
+                    }
+                }
+            },
+            doc! {
+                "$group": {
+                    "_id": "$channel",
+                    "message_ids": { "$push": "$message_id" },
+                    "attachment_ids_nested": { "$push": "$attachment_ids" }
+                }
+            },
+            doc! {
+                "$project": {
+                    "message_ids": 1_i32,
+                    "attachment_ids": {
+                        "$reduce": {
+                            "input": "$attachment_ids_nested",
+                            "initialValue": Vec::<bson::Bson>::new(),
+                            "in": { "$setUnion": ["$$value", "$$this"] }
+                        }
+                    }
+                }
+            },
+        ];
+
+        #[derive(serde::Deserialize)]
+        struct AggregatedChannel {
+            #[serde(rename = "_id")]
+            channel: String,
+            message_ids: Vec<String>,
+            #[serde(default)]
+            attachment_ids: Vec<String>,
+        }
+
+        let mut cursor = self
+            .col::<Document>(COL)
+            .aggregate(pipeline)
+            .await
+            .map_err(|_| create_database_error!("aggregate", COL))?
+            .with_type::<AggregatedChannel>();
+
+        let mut deleted_messages: HashMap<String, Vec<String>> = HashMap::new();
+        let mut attachment_ids: HashSet<String> = HashSet::new();
+
+        while let Some(result) = cursor.next().await {
+            if let Ok(item) = result {
+                for id in item.attachment_ids {
+                    attachment_ids.insert(id);
+                }
+                deleted_messages.insert(item.channel, item.message_ids);
+            }
+        }
+
+        // Mark attachments as deleted before deleting messages
+        if !attachment_ids.is_empty() {
+            self.col::<Document>("attachments")
+                .update_many(
+                    doc! {
+                        "_id": {
+                            "$in": attachment_ids.into_iter().collect::<Vec<String>>()
+                        }
+                    },
+                    doc! {
+                        "$set": {
+                            "deleted": true
+                        }
+                    },
+                )
+                .await
+                .map_err(|_| create_database_error!("update_many", "attachments"))?;
+        }
+
+        self.col::<Document>(COL)
+            .delete_many(filter)
+            .await
+            .map_err(|_| create_database_error!("delete_many", COL))?;
+
+        Ok(deleted_messages)
     }
 }
 
@@ -362,7 +465,6 @@ impl MongoDb {
                             "deleted": true
                         }
                     },
-                    None,
                 )
                 .await
                 .map_err(|_| create_database_error!("update_many", "attachments"))?;
@@ -370,7 +472,7 @@ impl MongoDb {
 
         // And then delete said messages.
         self.col::<Document>(COL)
-            .delete_many(projection, None)
+            .delete_many(projection)
             .await
             .map(|_| ())
             .map_err(|_| create_database_error!("delete_many", COL))

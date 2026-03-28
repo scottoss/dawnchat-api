@@ -11,6 +11,7 @@ pub mod util;
 use revolt_config::config;
 use revolt_database::events::client::EventV1;
 use revolt_database::AMQP;
+use revolt_ratelimits::rocket as ratelimiter;
 use rocket::{Build, Rocket};
 use rocket_cors::{AllowedOrigins, CorsOptions};
 use rocket_prometheus::PrometheusMetrics;
@@ -24,6 +25,7 @@ use amqprs::{
 use async_std::channel::unbounded;
 use authifier::AuthifierEvent;
 use rocket::data::ToByteUnit;
+use revolt_database::voice::VoiceClient;
 
 pub async fn web() -> Rocket<Build> {
     // Get settings
@@ -34,6 +36,7 @@ pub async fn web() -> Rocket<Build> {
 
     // Setup database
     let db = revolt_database::DatabaseInfo::Auto.connect().await.unwrap();
+    log::info!("database_here {db:?}");
     db.migrate_database().await.unwrap();
 
     // Setup Authifier event channel
@@ -67,6 +70,15 @@ pub async fn web() -> Rocket<Build> {
         .iter()
         .map(|s| FromStr::from_str(s).unwrap())
         .collect(),
+        expose_headers: [
+            "X-Ratelimit-Limit",
+            "X-Ratelimit-Bucket",
+            "X-Ratelimit-Remaining",
+            "X-Ratelimit-Reset-After",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect(),
         ..Default::default()
     }
     .to_cors()
@@ -89,6 +101,16 @@ pub async fn web() -> Rocket<Build> {
     )
     .into();
 
+    let swagger_0_8 = revolt_rocket_okapi::swagger_ui::make_swagger_ui(
+        &revolt_rocket_okapi::swagger_ui::SwaggerUIConfig {
+            url: "/0.8/openapi.json".to_owned(),
+            ..Default::default()
+        },
+    )
+    .into();
+
+    // Voice handler
+    let voice_client = VoiceClient::new(config.api.livekit.nodes.clone());
     // Configure Rabbit
     let connection = Connection::open(&OpenConnectionArguments::new(
         &config.rabbit.host,
@@ -122,18 +144,23 @@ pub async fn web() -> Rocket<Build> {
     let rocket = rocket::build();
     let prometheus = PrometheusMetrics::new();
 
+    // Ratelimits
+    let ratelimits = ratelimiter::RatelimitStorage::new(util::ratelimits::DeltaRatelimits);
+
     routes::mount(config, rocket)
         .attach(prometheus.clone())
         .mount("/metrics", prometheus)
         .mount("/", rocket_cors::catch_all_options_routes())
-        .mount("/", util::ratelimiter::routes())
+        .mount("/", ratelimiter::routes())
         .mount("/swagger/", swagger)
         .mount("/0.8/swagger/", swagger_0_8)
         .manage(authifier)
         .manage(db)
         .manage(amqp)
         .manage(cors.clone())
-        .attach(util::ratelimiter::RatelimitFairing)
+        .manage(voice_client)
+        .manage(ratelimits)
+        .attach(ratelimiter::RatelimitFairing)
         .attach(cors)
         .configure(rocket::Config {
             limits: rocket::data::Limits::default().limit("string", 5.megabytes()),

@@ -1,6 +1,7 @@
 use std::{borrow::Cow, collections::BTreeMap, io::Cursor};
 
 use amqprs::{channel::Channel as AmqpChannel, consumer::AsyncConsumer, BasicProperties, Deliver};
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use base64::{
     engine::{self},
@@ -46,6 +47,32 @@ impl<'a> PayloadLike for MessagePayload<'a> {
     }
 }
 
+#[derive(Serialize, Debug)]
+struct CallStartStopPayload<'a> {
+    aps: APS<'a>,
+    #[serde(skip_serializing)]
+    options: NotificationOptions<'a>,
+    #[serde(skip_serializing)]
+    device_token: &'a str,
+
+    initiator_id: &'a str,
+    #[serde(rename = "camelCase")]
+    channel_id: &'a str,
+    #[serde(rename = "camelCase")]
+    started_at: &'a str,
+    #[serde(rename = "camelCase")]
+    ended: bool,
+}
+
+impl<'a> PayloadLike for CallStartStopPayload<'a> {
+    fn get_device_token(&self) -> &'a str {
+        self.device_token
+    }
+    fn get_options(&self) -> &NotificationOptions {
+        &self.options
+    }
+}
+
 // region: consumer
 
 pub struct ApnsOutboundConsumer {
@@ -62,10 +89,11 @@ impl ApnsOutboundConsumer {
         // in a dm it should just be "Sendername".
         // not sure how feasible all those are given the PushNotification object as it currently stands.
 
+        #[allow(deprecated)]
         match &notification.channel {
             Channel::DirectMessage { .. } => notification.author.clone(),
             Channel::Group { name, .. } => format!("{}, #{}", notification.author, name),
-            Channel::TextChannel { name, .. } | Channel::VoiceChannel { name, .. } => {
+            Channel::TextChannel { name, .. } => {
                 format!("{} in #{}", notification.author, name)
             }
             _ => "Unknown".to_string(),
@@ -81,7 +109,7 @@ impl ApnsOutboundConsumer {
                 }
             }
 
-            println!("Got badge count for APN: {}", mention_count);
+            debug!("Got badge count for APN: {}", mention_count);
 
             return Some(mention_count);
         }
@@ -122,20 +150,16 @@ impl ApnsOutboundConsumer {
 
         Ok(ApnsOutboundConsumer { db, client })
     }
-}
 
-#[allow(unused_variables)]
-#[async_trait]
-impl AsyncConsumer for ApnsOutboundConsumer {
-    async fn consume(
+    async fn consume_event(
         &mut self,
-        channel: &AmqpChannel,
-        deliver: Deliver,
-        basic_properties: BasicProperties,
+        _channel: &AmqpChannel,
+        _deliver: Deliver,
+        _basic_properties: BasicProperties,
         content: Vec<u8>,
-    ) {
-        let content = String::from_utf8(content).unwrap();
-        let payload: PayloadToService = serde_json::from_str(content.as_str()).unwrap();
+    ) -> Result<()> {
+        let content = String::from_utf8(content)?;
+        let payload: PayloadToService = serde_json::from_str(content.as_str())?;
 
         let payload_options = NotificationOptions {
             apns_id: None,
@@ -159,7 +183,7 @@ impl AsyncConsumer for ApnsOutboundConsumer {
                             alert.from_user.username, alert.from_user.discriminator
                         )))
                         .clone()
-                        .unwrap(),
+                        .ok_or_else(|| anyhow!("missing name"))?,
                 )];
 
                 let apn_payload = Payload {
@@ -188,6 +212,10 @@ impl AsyncConsumer for ApnsOutboundConsumer {
                     data: BTreeMap::new(),
                 };
 
+                debug!(
+                    "Sending friend request received for user: {:}",
+                    &payload.user_id
+                );
                 resp = self.client.send(apn_payload).await;
             }
 
@@ -201,7 +229,7 @@ impl AsyncConsumer for ApnsOutboundConsumer {
                             alert.accepted_user.username, alert.accepted_user.discriminator
                         )))
                         .clone()
-                        .unwrap(),
+                        .ok_or_else(|| anyhow!("missing name"))?,
                 )];
 
                 let apn_payload = Payload {
@@ -230,6 +258,10 @@ impl AsyncConsumer for ApnsOutboundConsumer {
                     data: BTreeMap::new(),
                 };
 
+                debug!(
+                    "Sending friend request accept for user: {:}",
+                    &payload.user_id
+                );
                 resp = self.client.send(apn_payload).await;
             }
             PayloadKind::Generic(alert) => {
@@ -259,6 +291,10 @@ impl AsyncConsumer for ApnsOutboundConsumer {
                     data: BTreeMap::new(),
                 };
 
+                debug!(
+                    "Sending generic notification for user: {:}",
+                    &payload.user_id
+                );
                 resp = self.client.send(apn_payload).await;
             }
 
@@ -294,8 +330,13 @@ impl AsyncConsumer for ApnsOutboundConsumer {
                     channel_name: alert.channel.name().unwrap_or(&title),
                 };
 
+                debug!(
+                    "Sending message notification for user: {:}",
+                    &payload.user_id
+                );
                 resp = self.client.send(apn_payload).await;
             }
+
             PayloadKind::BadgeUpdate(badge) => {
                 let apn_payload = Payload {
                     aps: APS {
@@ -307,6 +348,36 @@ impl AsyncConsumer for ApnsOutboundConsumer {
                     data: BTreeMap::new(),
                 };
 
+                debug!("Sending badge update for user: {:}", &payload.user_id);
+                resp = self.client.send(apn_payload).await;
+            }
+
+            PayloadKind::DmCallStartEnd(alert) => {
+                let started_at = alert.started_at.map_or(String::new(), |f| f.clone());
+
+                let apn_payload = CallStartStopPayload {
+                    aps: APS {
+                        alert: None,
+                        badge: self.get_badge_count(&payload.user_id).await,
+                        sound: None,
+                        thread_id: None,
+                        content_available: None,
+                        category: None,
+                        mutable_content: Some(1),
+                        url_args: None,
+                    },
+                    device_token: &payload.token,
+                    options: payload_options.clone(),
+                    initiator_id: &alert.initiator_id,
+                    channel_id: &alert.channel_id,
+                    started_at: &started_at,
+                    ended: alert.ended,
+                };
+
+                debug!(
+                    "Sending call start/stop notification for user: {:}",
+                    &payload.user_id
+                );
                 resp = self.client.send(apn_payload).await;
             }
         }
@@ -321,6 +392,10 @@ impl AsyncConsumer for ApnsOutboundConsumer {
                         }),
                     ..
                 }) => {
+                    info!(
+                        "Removing APNS subscription id {:} (user: {:}) due to invalid token",
+                        &payload.session_id, &payload.user_id
+                    );
                     if let Err(err) = self
                         .db
                         .remove_push_subscription_by_session_id(&payload.session_id)
@@ -333,6 +408,28 @@ impl AsyncConsumer for ApnsOutboundConsumer {
                     revolt_config::capture_error(&err);
                 }
             }
+        }
+
+        Ok(())
+    }
+}
+
+#[allow(unused_variables)]
+#[async_trait]
+impl AsyncConsumer for ApnsOutboundConsumer {
+    async fn consume(
+        &mut self,
+        channel: &AmqpChannel,
+        deliver: Deliver,
+        basic_properties: BasicProperties,
+        content: Vec<u8>,
+    ) {
+        if let Err(err) = self
+            .consume_event(channel, deliver, basic_properties, content)
+            .await
+        {
+            revolt_config::capture_anyhow(&err);
+            eprintln!("Failed to process APN event: {err:?}");
         }
     }
 }

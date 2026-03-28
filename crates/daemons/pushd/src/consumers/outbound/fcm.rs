@@ -2,13 +2,15 @@ use std::{collections::HashMap, time::Duration};
 
 use amqprs::{channel::Channel as AmqpChannel, consumer::AsyncConsumer, BasicProperties, Deliver};
 
+use anyhow::{anyhow, bail, Result};
 use async_trait::async_trait;
 use fcm_v1::{
-    android::AndroidConfig,
+    android::{AndroidConfig, AndroidMessagePriority},
     auth::{Authenticator, ServiceAccountKey},
     message::{Message, Notification},
     Client, Error as FcmError,
 };
+use revolt_config::config;
 use revolt_database::{events::rabbit::*, Database};
 use revolt_models::v0::{Channel, PushNotification};
 use serde_json::Value;
@@ -26,10 +28,11 @@ impl FcmOutboundConsumer {
         // in a dm it should just be "Sendername".
         // not sure how feasible all those are given the PushNotification object as it currently stands.
 
+        #[allow(deprecated)]
         match &notification.channel {
             Channel::DirectMessage { .. } => notification.author.clone(),
             Channel::Group { name, .. } => format!("{}, #{}", notification.author, name),
-            Channel::TextChannel { name, .. } | Channel::VoiceChannel { name, .. } => {
+            Channel::TextChannel { name, .. } => {
                 format!("{} in #{}", notification.author, name)
             }
             _ => "Unknown".to_string(),
@@ -64,22 +67,16 @@ impl FcmOutboundConsumer {
             ),
         })
     }
-}
 
-#[allow(unused_variables)]
-#[async_trait]
-impl AsyncConsumer for FcmOutboundConsumer {
-    async fn consume(
+    async fn consume_event(
         &mut self,
-        channel: &AmqpChannel,
-        deliver: Deliver,
-        basic_properties: BasicProperties,
+        _channel: &AmqpChannel,
+        _deliver: Deliver,
+        _basic_properties: BasicProperties,
         content: Vec<u8>,
-    ) {
-        let content = String::from_utf8(content).unwrap();
-        let payload: PayloadToService = serde_json::from_str(content.as_str()).unwrap();
-
-        let config = revolt_config::config().await;
+    ) -> Result<()> {
+        let content = String::from_utf8(content)?;
+        let payload: PayloadToService = serde_json::from_str(content.as_str())?;
 
         #[allow(clippy::needless_late_init)]
         let resp: Result<Message, FcmError>;
@@ -94,7 +91,7 @@ impl AsyncConsumer for FcmOutboundConsumer {
                         alert.from_user.username, alert.from_user.discriminator
                     )))
                     .clone()
-                    .unwrap();
+                    .ok_or_else(|| anyhow!("missing name"))?;
 
                 let mut data = HashMap::new();
                 data.insert(
@@ -122,7 +119,7 @@ impl AsyncConsumer for FcmOutboundConsumer {
                         alert.accepted_user.username, alert.accepted_user.discriminator
                     )))
                     .clone()
-                    .unwrap();
+                    .ok_or_else(|| anyhow!("missing name"))?;
 
                 let mut data: HashMap<String, Value> = HashMap::new();
                 data.insert(
@@ -174,8 +171,39 @@ impl AsyncConsumer for FcmOutboundConsumer {
                 resp = self.client.send(&msg).await;
             }
 
+            PayloadKind::DmCallStartEnd(alert) => {
+                let mut data: HashMap<String, Value> = HashMap::new();
+                data.insert(
+                    "initiator_id".to_string(),
+                    Value::String(alert.initiator_id),
+                );
+                data.insert("channel_id".to_string(), Value::String(alert.channel_id));
+                data.insert(
+                    "started_at".to_string(),
+                    Value::String(alert.started_at.unwrap_or_else(|| "".to_string())),
+                );
+                data.insert("ended".to_string(), Value::Bool(alert.ended));
+
+                let msg = Message {
+                    token: Some(payload.token),
+                    notification: None,
+                    data: Some(data),
+                    android: Some(AndroidConfig {
+                        priority: Some(AndroidMessagePriority::High),
+                        ttl: Some(format!(
+                            "{}s",
+                            config().await.api.livekit.call_ring_duration
+                        )),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                };
+
+                resp = self.client.send(&msg).await;
+            }
+
             PayloadKind::BadgeUpdate(_) => {
-                panic!("FCM cannot handle badge updates, and they should not be sent here.")
+                bail!("FCM cannot handle badge updates and they should not be sent here.");
             }
         }
 
@@ -194,6 +222,28 @@ impl AsyncConsumer for FcmOutboundConsumer {
                     revolt_config::capture_error(&err);
                 }
             }
+        }
+
+        Ok(())
+    }
+}
+
+#[allow(unused_variables)]
+#[async_trait]
+impl AsyncConsumer for FcmOutboundConsumer {
+    async fn consume(
+        &mut self,
+        channel: &AmqpChannel,
+        deliver: Deliver,
+        basic_properties: BasicProperties,
+        content: Vec<u8>,
+    ) {
+        if let Err(err) = self
+            .consume_event(channel, deliver, basic_properties, content)
+            .await
+        {
+            revolt_config::capture_anyhow(&err);
+            eprintln!("Failed to process FCM event: {err:?}");
         }
     }
 }

@@ -1,3 +1,6 @@
+#[macro_use]
+extern crate log;
+
 use amqprs::{
     channel::{
         BasicConsumeArguments, Channel, ExchangeDeclareArguments, QueueBindArguments,
@@ -11,17 +14,20 @@ use revolt_config::{config, Settings};
 use tokio::sync::Notify;
 
 mod consumers;
+mod utils;
 use consumers::{
     inbound::{
-        ack::AckConsumer, fr_accepted::FRAcceptedConsumer, fr_received::FRReceivedConsumer,
-        generic::GenericConsumer, message::MessageConsumer,
+        ack::AckConsumer, dm_call::DmCallConsumer, fr_accepted::FRAcceptedConsumer,
+        fr_received::FRReceivedConsumer, generic::GenericConsumer,
+        mass_mention::MassMessageConsumer, message::MessageConsumer,
     },
     outbound::{apn::ApnsOutboundConsumer, fcm::FcmOutboundConsumer, vapid::VapidOutboundConsumer},
 };
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 2)]
 async fn main() {
-    let config = config().await;
+    // Configure logging and environment
+    revolt_config::configure!(pushd);
 
     // Setup database
     let db = revolt_database::DatabaseInfo::Auto.connect().await.unwrap();
@@ -47,6 +53,8 @@ async fn main() {
 
     // This'll require some interesting shimming if we need to add more events once this is in prod (different payloads between prod and test),
     // but that sounds like a problem for future us.
+
+    let config = config().await;
 
     // inbound: generic
     connections.push(
@@ -92,6 +100,30 @@ async fn main() {
             config.pushd.get_fr_accepted_routing_key().as_str(),
             None,
             FRAcceptedConsumer::new(db.clone(), authifier.clone()),
+        )
+        .await,
+    );
+
+    // inbound: Mass Mentions
+    connections.push(
+        make_queue_and_consume(
+            &config,
+            &config.pushd.mass_mention_queue,
+            config.pushd.get_mass_mention_routing_key().as_str(),
+            None,
+            MassMessageConsumer::new(db.clone(), authifier.clone()),
+        )
+        .await,
+    );
+
+    // inbound: Dm Calls
+    connections.push(
+        make_queue_and_consume(
+            &config,
+            &config.pushd.dm_call_queue,
+            config.pushd.get_dm_call_routing_key().as_str(),
+            None,
+            DmCallConsumer::new(db.clone(), authifier.clone()),
         )
         .await,
     );
@@ -223,11 +255,10 @@ where
         .manual_ack(false)
         .finish();
 
-    channel.basic_consume(consumer, args).await.unwrap();
-    log::info!(
-        "Consuming routing key {} as queue {}",
-        routing_key,
-        queue_name
+    let routing_key = channel.basic_consume(consumer, args).await.unwrap();
+    info!(
+        "Consuming routing key {} as queue {}, tag {}",
+        routing_key, queue_name, routing_key
     );
     (channel, connection)
 }

@@ -1,5 +1,9 @@
 use revolt_database::{
     util::{permissions::DatabasePermissionQuery, reference::Reference},
+    voice::{
+        get_user_voice_channel_in_server, remove_user_from_voice_channel, UserVoiceChannel,
+        VoiceClient,
+    },
     Database, RemovalIntention, User,
 };
 use revolt_permissions::{calculate_server_permissions, ChannelPermission};
@@ -14,9 +18,10 @@ use rocket_empty::EmptyResponse;
 #[delete("/<target>/members/<member>")]
 pub async fn kick(
     db: &State<Database>,
+    voice_client: &State<VoiceClient>,
     user: User,
-    target: Reference,
-    member: Reference,
+    target: Reference<'_>,
+    member: Reference<'_>,
 ) -> Result<EmptyResponse> {
     let server = target.as_server(db).await?;
 
@@ -42,6 +47,19 @@ pub async fn kick(
 
     member
         .remove(db, &server, RemovalIntention::Kick, false)
-        .await
-        .map(|_| EmptyResponse)
+        .await?;
+
+    if let Some(channel_id) = get_user_voice_channel_in_server(target.id, &server.id).await? {
+        remove_user_from_voice_channel(
+            voice_client,
+            &UserVoiceChannel {
+                id: channel_id,
+                server_id: Some(server.id.clone()),
+            },
+            target.id,
+        )
+        .await?;
+    };
+
+    Ok(EmptyResponse)
 }

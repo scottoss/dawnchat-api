@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+#![allow(deprecated)]
+use std::{borrow::Cow, collections::HashMap};
 
 use revolt_config::config;
 use revolt_models::v0::{self, MessageAuthor};
@@ -8,9 +9,11 @@ use serde::{Deserialize, Serialize};
 use ulid::Ulid;
 
 use crate::{
-    events::client::EventV1, tasks::ack::AckEvent, Database, File, IntoDocumentPath, PartialServer,
-    Server, SystemMessage, User, AMQP,
+    events::client::EventV1, Database, File, PartialServer, Server, SystemMessage, User, AMQP,
 };
+
+#[cfg(feature = "mongodb")]
+use crate::IntoDocumentPath;
 
 auto_derived!(
     #[serde(tag = "channel_type")]
@@ -103,38 +106,22 @@ auto_derived!(
             /// Whether this channel is marked as not safe for work
             #[serde(skip_serializing_if = "crate::if_false", default)]
             nsfw: bool,
+
+            /// Voice Information for when this channel is also a voice channel
+            #[serde(skip_serializing_if = "Option::is_none")]
+            voice: Option<VoiceInformation>,
+
+            /// The channel's slowmode delay in seconds
+            #[serde(skip_serializing_if = "Option::is_none")]
+            slowmode: Option<u64>,
         },
-        /// Voice channel belonging to a server
-        VoiceChannel {
-            /// Unique Id
-            #[serde(rename = "_id")]
-            id: String,
-            /// Id of the server this channel belongs to
-            server: String,
+    }
 
-            /// Display name of the channel
-            name: String,
-            #[serde(skip_serializing_if = "Option::is_none")]
-            /// Channel description
-            description: Option<String>,
-            /// Custom icon attachment
-            #[serde(skip_serializing_if = "Option::is_none")]
-            icon: Option<File>,
-
-            /// Default permissions assigned to users in this channel
-            #[serde(skip_serializing_if = "Option::is_none")]
-            default_permissions: Option<OverrideField>,
-            /// Permissions assigned based on role to this channel
-            #[serde(
-                default = "HashMap::<String, OverrideField>::new",
-                skip_serializing_if = "HashMap::<String, OverrideField>::is_empty"
-            )]
-            role_permissions: HashMap<String, OverrideField>,
-
-            /// Whether this channel is marked as not safe for work
-            #[serde(skip_serializing_if = "crate::if_false", default)]
-            nsfw: bool,
-        },
+    #[derive(Default)]
+    pub struct VoiceInformation {
+        /// Maximium amount of users allowed in the voice channel at once
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub max_users: Option<usize>,
     }
 );
 
@@ -161,6 +148,10 @@ auto_derived!(
         pub default_permissions: Option<OverrideField>,
         #[serde(skip_serializing_if = "Option::is_none")]
         pub last_message_id: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub voice: Option<VoiceInformation>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub slowmode: Option<u64>,
     }
 
     /// Optional fields on channel object
@@ -168,6 +159,7 @@ auto_derived!(
         Description,
         Icon,
         DefaultPermissions,
+        Voice,
     }
 );
 
@@ -219,16 +211,21 @@ impl Channel {
                 default_permissions: None,
                 role_permissions: HashMap::new(),
                 nsfw: data.nsfw.unwrap_or(false),
+                voice: data.voice.map(|voice| voice.into()),
+                slowmode: None
             },
-            v0::LegacyServerChannelType::Voice => Channel::VoiceChannel {
+            v0::LegacyServerChannelType::Voice => Channel::TextChannel {
                 id: id.clone(),
                 server: server.id.to_owned(),
                 name: data.name,
                 description: data.description,
                 icon: None,
+                last_message_id: None,
                 default_permissions: None,
                 role_permissions: HashMap::new(),
                 nsfw: data.nsfw.unwrap_or(false),
+                voice: Some(data.voice.unwrap_or_default().into()),
+                slowmode: None
             },
         };
 
@@ -269,16 +266,24 @@ impl Channel {
             }));
         }
 
+        let id = ulid::Ulid::new().to_string();
+
+        let icon = if let Some(icon_id) = data.icon {
+            Some(File::use_channel_icon(db, &icon_id, &id, &owner_id).await?)
+        } else {
+            None
+        };
+
         let recipients = data.users.into_iter().collect::<Vec<String>>();
         let channel = Channel::Group {
-            id: ulid::Ulid::new().to_string(),
+            id,
 
             name: data.name,
             owner: owner_id,
             description: data.description,
             recipients: recipients.clone(),
 
-            icon: None,
+            icon,
             last_message_id: None,
 
             permissions: None,
@@ -320,13 +325,10 @@ impl Channel {
 
             db.insert_channel(&channel).await?;
 
-            match &channel {
-                Channel::DirectMessage { .. } => {
-                    let event = EventV1::ChannelCreate(channel.clone().into());
-                    event.clone().private(user_a.id.clone()).await;
-                    event.private(user_b.id.clone()).await;
-                }
-                _ => {}
+            if let Channel::DirectMessage { .. } = &channel {
+                let event = EventV1::ChannelCreate(channel.clone().into());
+                event.clone().private(user_a.id.clone()).await;
+                event.private(user_b.id.clone()).await;
             };
 
             Ok(channel)
@@ -424,8 +426,28 @@ impl Channel {
             Channel::DirectMessage { id, .. }
             | Channel::Group { id, .. }
             | Channel::SavedMessages { id, .. }
-            | Channel::TextChannel { id, .. }
-            | Channel::VoiceChannel { id, .. } => id,
+            | Channel::TextChannel { id, .. } => id,
+        }
+    }
+
+    /// Clone this channel's server id
+    pub fn server(&self) -> Option<&str> {
+        match self {
+            Channel::TextChannel { server, .. } => Some(server),
+            _ => None,
+        }
+    }
+
+    /// Gets this channel's voice information
+    pub fn voice(&self) -> Option<Cow<VoiceInformation>> {
+        match self {
+            Self::DirectMessage { .. } | Self::Group { .. } => {
+                Some(Cow::Owned(VoiceInformation::default()))
+            }
+            Self::TextChannel {
+                voice: Some(voice), ..
+            } => Some(Cow::Borrowed(voice)),
+            _ => None,
         }
     }
 
@@ -438,12 +460,6 @@ impl Channel {
     ) -> Result<()> {
         match self {
             Channel::TextChannel {
-                id,
-                server,
-                role_permissions,
-                ..
-            }
-            | Channel::VoiceChannel {
                 id,
                 server,
                 role_permissions,
@@ -494,7 +510,7 @@ impl Channel {
             clear: remove.into_iter().map(|v| v.into()).collect(),
         }
         .p(match self {
-            Self::TextChannel { server, .. } | Self::VoiceChannel { server, .. } => server.clone(),
+            Self::TextChannel { server, .. } => server.clone(),
             _ => id,
         })
         .await;
@@ -506,17 +522,13 @@ impl Channel {
     pub fn remove_field(&mut self, field: &FieldsChannel) {
         match field {
             FieldsChannel::Description => match self {
-                Self::Group { description, .. }
-                | Self::TextChannel { description, .. }
-                | Self::VoiceChannel { description, .. } => {
+                Self::Group { description, .. } | Self::TextChannel { description, .. } => {
                     description.take();
                 }
                 _ => {}
             },
             FieldsChannel::Icon => match self {
-                Self::Group { icon, .. }
-                | Self::TextChannel { icon, .. }
-                | Self::VoiceChannel { icon, .. } => {
+                Self::Group { icon, .. } | Self::TextChannel { icon, .. } => {
                     icon.take();
                 }
                 _ => {}
@@ -525,12 +537,14 @@ impl Channel {
                 Self::TextChannel {
                     default_permissions,
                     ..
-                }
-                | Self::VoiceChannel {
-                    default_permissions,
-                    ..
                 } => {
                     default_permissions.take();
+                }
+                _ => {}
+            },
+            FieldsChannel::Voice => match self {
+                Self::TextChannel { voice, .. } => {
+                    voice.take();
                 }
                 _ => {}
             },
@@ -545,6 +559,7 @@ impl Channel {
     }
 
     /// Apply partial channel to channel
+    #[allow(deprecated)]
     pub fn apply_options(&mut self, partial: PartialChannel) {
         match self {
             Self::SavedMessages { .. } => {}
@@ -593,15 +608,7 @@ impl Channel {
                 nsfw,
                 default_permissions,
                 role_permissions,
-                ..
-            }
-            | Self::VoiceChannel {
-                name,
-                description,
-                icon,
-                nsfw,
-                default_permissions,
-                role_permissions,
+                voice,
                 ..
             } => {
                 if let Some(v) = partial.name {
@@ -627,6 +634,10 @@ impl Channel {
                 if let Some(v) = partial.default_permissions {
                     default_permissions.replace(v);
                 }
+
+                if let Some(v) = partial.voice {
+                    voice.replace(v);
+                }
             }
         }
     }
@@ -641,10 +652,11 @@ impl Channel {
         .private(user.to_string())
         .await;
 
+        #[cfg(feature = "tasks")]
         crate::tasks::ack::queue_ack(
             self.id().to_string(),
             user.to_string(),
-            AckEvent::AckMessage {
+            crate::tasks::ack::AckEvent::AckMessage {
                 id: message.to_string(),
             },
         )
@@ -761,12 +773,14 @@ impl Channel {
     }
 }
 
+#[cfg(feature = "mongodb")]
 impl IntoDocumentPath for FieldsChannel {
     fn as_path(&self) -> Option<&'static str> {
         Some(match self {
             FieldsChannel::Description => "description",
             FieldsChannel::Icon => "icon",
             FieldsChannel::DefaultPermissions => "default_permissions",
+            FieldsChannel::Voice => "voice",
         })
     }
 }

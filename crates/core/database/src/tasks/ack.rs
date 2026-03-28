@@ -3,8 +3,8 @@ use crate::{Database, Message, AMQP};
 
 use deadqueue::limited::Queue;
 use once_cell::sync::Lazy;
+use revolt_config::capture_message;
 use revolt_models::v0::PushNotification;
-use rocket::form::validate::Contains;
 use std::{
     collections::{HashMap, HashSet},
     time::Duration,
@@ -14,6 +14,7 @@ use validator::HasLen;
 use revolt_result::Result;
 
 use super::DelayedTask;
+use crate::Channel::TextChannel;
 
 /// Enumeration of possible events
 #[derive(Debug, Eq, PartialEq)]
@@ -64,6 +65,7 @@ pub async fn queue_ack(channel: String, user: String, event: AckEvent) {
     );
 }
 
+/// Do not add more than one message per event.
 pub async fn queue_message(channel: String, event: AckEvent) {
     Q.try_push(Data {
         channel,
@@ -113,40 +115,50 @@ pub async fn handle_ack_event(
         }
         AckEvent::ProcessMessage { messages } => {
             let mut users: HashSet<&String> = HashSet::new();
-            debug!(
+            info!(
                 "Processing {} messages from channel {}",
                 messages.len(),
                 messages[0].1.channel
             );
 
             // find all the users we'll be notifying
-            messages
-                .iter()
-                .for_each(|(_, _, recipents, _)| users.extend(recipents.iter()));
+            messages.iter().for_each(|(_, _, recipents, _)| {
+                users.extend(recipents.iter());
+            });
 
-            debug!("Found {} users to notify.", users.len());
+            info!("Found {} users to notify.", users.len());
 
             for user in users {
                 let message_ids: Vec<String> = messages
                     .iter()
-                    .filter(|(_, _, recipients, _)| recipients.contains(user))
-                    .map(|(_, message, _, _)| message.id.clone())
+                    .filter_map(|(_, message, recipients, _)| {
+                        if recipients.contains(user) {
+                            Some(message.id.clone())
+                        } else {
+                            None
+                        }
+                    })
                     .collect();
 
                 if !message_ids.is_empty() {
                     db.add_mention_to_unread(channel, user, &message_ids)
                         .await?;
                 }
-                debug!("Added {} mentions for user {}", message_ids.len(), &user);
+                info!("Added {} mentions for user {}", message_ids.len(), &user);
             }
 
-            for (push, _, recipients, silenced) in messages {
-                if *silenced || recipients.is_empty() || push.is_none() {
+            let mut mass_mentions = vec![];
+
+            for (push, message, recipients, silenced) in messages {
+                if *silenced
+                    || push.is_none()
+                    || (recipients.is_empty() && !message.contains_mass_push_mention())
+                {
                     debug!(
                         "Rejecting push: silenced: {}, recipient count: {}, push exists: {:?}",
                         *silenced,
                         recipients.length(),
-                        push
+                        push.is_some()
                     );
                     continue;
                 }
@@ -161,6 +173,32 @@ pub async fn handle_ack_event(
                     .await
                 {
                     revolt_config::capture_error(&err);
+                }
+
+                if message.contains_mass_push_mention() {
+                    mass_mentions.push(push.clone().unwrap());
+                }
+            }
+
+            if !mass_mentions.is_empty() {
+                debug!(
+                    "Sending mass mention push event to AMQP; channel {}",
+                    &mass_mentions[0].message.channel
+                );
+
+                let channel = db
+                    .fetch_channel(&mass_mentions[0].message.channel)
+                    .await
+                    .expect("Failed to fetch channel from db");
+
+                if let TextChannel { server, .. } = channel {
+                    if let Err(err) =
+                        amqp.mass_mention_message_sent(server, mass_mentions).await
+                    {
+                        revolt_config::capture_error(&err);
+                    }
+                } else {
+                    panic!("Unknown channel type when sending mass mention event");
                 }
             }
         }
@@ -207,6 +245,8 @@ pub async fn worker(db: Database, amqp: AMQP) {
             mut event,
         }) = Q.try_pop()
         {
+            info!("Took next ack from queue, now {} remaining", Q.len());
+
             let key: (Option<String>, String, u8) = (
                 user,
                 channel,
@@ -221,18 +261,31 @@ pub async fn worker(db: Database, amqp: AMQP) {
                         if let AckEvent::ProcessMessage { messages: existing } =
                             &mut task.data.event
                         {
-                            // add the new message to the list of messages to be processed.
-                            existing.append(new_data);
+                            if let Some(new_event) = new_data.pop() {
+                                // if the message contains a mass mention, do not delay it any further.
+                                if new_event.1.contains_mass_push_mention() {
+                                    // add the new message to the list of messages to be processed.
+                                    existing.push(new_event);
+                                    task.run_immediately();
+                                    continue;
+                                }
 
-                            // put a cap on the amount of messages that can be queued, for particularly active channels
-                            if (existing.length() as u16)
-                                < revolt_config::config()
-                                    .await
-                                    .features
-                                    .advanced
-                                    .process_message_delay_limit
-                            {
-                                task.delay();
+                                existing.push(new_event);
+
+                                // put a cap on the amount of messages that can be queued, for particularly active channels
+                                if (existing.length() as u16)
+                                    < revolt_config::config()
+                                        .await
+                                        .features
+                                        .advanced
+                                        .process_message_delay_limit
+                                {
+                                    task.delay();
+                                }
+                            } else {
+                                let err_msg = format!("Got zero-length message event: {event:?}");
+                                capture_message(&err_msg, revolt_config::Level::Warning);
+                                info!("{err_msg}")
                             }
                         } else {
                             panic!("Somehow got an ack message in the add mention arm");

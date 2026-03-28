@@ -87,23 +87,46 @@ impl<'z> BulkDatabasePermissionQuery<'z> {
         }
     }
 
-    pub fn channel(self, channel: &'z Channel) -> BulkDatabasePermissionQuery {
+    pub fn channel(self, channel: &'z Channel) -> BulkDatabasePermissionQuery<'z> {
         BulkDatabasePermissionQuery {
             channel: Some(channel.clone()),
             ..self
         }
     }
 
-    pub fn members(self, members: &'z [Member]) -> BulkDatabasePermissionQuery {
+    pub async fn from_channel_id(self, channel_id: String) -> BulkDatabasePermissionQuery<'z> {
+        let channel = self
+            .database
+            .fetch_channel(channel_id.as_str())
+            .await
+            .expect("Valid channel id");
+
+        drop(channel_id);
+
         BulkDatabasePermissionQuery {
-            members: Some(members.to_owned()),
+            channel: Some(channel),
             ..self
         }
     }
 
-    pub fn users(self, users: &'z [User]) -> BulkDatabasePermissionQuery {
+    pub fn members(self, members: &'z [Member]) -> BulkDatabasePermissionQuery<'z> {
+        BulkDatabasePermissionQuery {
+            members: Some(members.to_owned()),
+            cached_member_perms: None,
+            users: None,
+            cached_members: None,
+            cached_users: None,
+            ..self
+        }
+    }
+
+    pub fn users(self, users: &'z [User]) -> BulkDatabasePermissionQuery<'z> {
         BulkDatabasePermissionQuery {
             users: Some(users.to_owned()),
+            cached_member_perms: None,
+            members: None,
+            cached_members: None,
+            cached_users: None,
             ..self
         }
     }
@@ -121,10 +144,6 @@ impl<'z> BulkDatabasePermissionQuery<'z> {
                 Channel::TextChannel {
                     default_permissions,
                     ..
-                }
-                | Channel::VoiceChannel {
-                    default_permissions,
-                    ..
                 } => default_permissions.unwrap_or_default().into(),
                 _ => Default::default(),
             }
@@ -133,16 +152,14 @@ impl<'z> BulkDatabasePermissionQuery<'z> {
         }
     }
 
-    #[allow(dead_code)]
+    #[allow(dead_code, deprecated)]
     fn get_channel_type(&mut self) -> ChannelType {
         if let Some(channel) = &self.channel {
             match channel {
                 Channel::DirectMessage { .. } => ChannelType::DirectMessage,
                 Channel::Group { .. } => ChannelType::Group,
                 Channel::SavedMessages { .. } => ChannelType::SavedMessages,
-                Channel::TextChannel { .. } | Channel::VoiceChannel { .. } => {
-                    ChannelType::ServerChannel
-                }
+                Channel::TextChannel { .. } => ChannelType::ServerChannel,
             }
         } else {
             ChannelType::Unknown
@@ -155,9 +172,6 @@ impl<'z> BulkDatabasePermissionQuery<'z> {
         if let Some(channel) = &self.channel {
             match channel {
                 Channel::TextChannel {
-                    role_permissions, ..
-                }
-                | Channel::VoiceChannel {
                     role_permissions, ..
                 } => role_permissions,
                 _ => panic!("Not supported for non-server channels"),
@@ -181,12 +195,6 @@ async fn calculate_members_permissions<'a>(
         .clone()
     {
         Channel::TextChannel {
-            id,
-            role_permissions,
-            default_permissions,
-            ..
-        }
-        | Channel::VoiceChannel {
             id,
             role_permissions,
             default_permissions,

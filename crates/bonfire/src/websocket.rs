@@ -3,7 +3,7 @@ use std::{collections::HashSet, net::SocketAddr, sync::Arc};
 use async_tungstenite::WebSocketStream;
 use authifier::AuthifierEvent;
 use fred::{
-    error::{RedisError, RedisErrorKind},
+    error::RedisErrorKind,
     interfaces::{ClientLike, EventInterface, PubsubInterface},
     types::RedisConfig,
 };
@@ -17,6 +17,7 @@ use redis_kiss::{PayloadType, REDIS_PAYLOAD_TYPE, REDIS_URI};
 use revolt_config::report_internal_error;
 use revolt_database::{
     events::{client::EventV1, server::ClientMessage},
+    iso8601_timestamp::Timestamp,
     Database, User, UserHint,
 };
 use revolt_presence::{create_session, delete_session};
@@ -99,6 +100,10 @@ pub async fn client(db: &'static Database, stream: TcpStream, addr: SocketAddr) 
     };
 
     info!("User {addr:?} authenticated as @{}", user.username);
+
+    db.update_session_last_seen(&session_id, Timestamp::now_utc())
+        .await
+        .ok();
 
     // Create local state.
     let mut state = State::from(user, session_id);
@@ -213,7 +218,13 @@ async fn listener(
     kill_signal_r: async_channel::Receiver<()>,
     write: &Mutex<WsWriter>,
 ) {
-    let redis_config = RedisConfig::from_url(&REDIS_URI).unwrap();
+    let stoat_config = revolt_config::config().await;
+    let url = stoat_config
+        .database
+        .redis_pubsub
+        .unwrap_or(REDIS_URI.to_string());
+
+    let redis_config = RedisConfig::from_url(&url).unwrap();
     let subscriber = match report_internal_error!(
         fred::types::Builder::from_config(redis_config).build_subscriber_client()
     ) {
@@ -417,6 +428,8 @@ async fn worker(
     mut read: WsReader,
     write: &Mutex<WsWriter>,
 ) {
+    let revolt_config = revolt_config::config().await;
+
     loop {
         let t1 = read.try_next().fuse();
         let t2 = kill_signal_r.recv().fuse();
@@ -453,6 +466,10 @@ async fn worker(
 
                 match payload {
                     ClientMessage::BeginTyping { channel } => {
+                        if revolt_config.disable_events_dont_use {
+                            continue;
+                        }
+
                         if !subscribed.read().await.contains(&channel) {
                             continue;
                         }
@@ -465,6 +482,10 @@ async fn worker(
                         .await;
                     }
                     ClientMessage::EndTyping { channel } => {
+                        if revolt_config.disable_events_dont_use {
+                            continue;
+                        }
+
                         if !subscribed.read().await.contains(&channel) {
                             continue;
                         }

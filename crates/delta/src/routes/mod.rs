@@ -1,4 +1,4 @@
-use revolt_config::{config, Settings};
+use revolt_config::Settings;
 use revolt_rocket_okapi::{revolt_okapi::openapi3::OpenApi, settings::OpenApiSettings};
 pub use rocket::http::Status;
 pub use rocket::response::Redirect;
@@ -9,6 +9,7 @@ mod channels;
 mod customisation;
 mod invites;
 mod onboard;
+mod policy;
 mod push;
 mod root;
 mod safety;
@@ -36,6 +37,7 @@ pub fn mount(config: Settings, mut rocket: Rocket<Build>) -> Rocket<Build> {
             "/auth/session" => rocket_authifier::routes::session::routes(),
             "/auth/mfa" => rocket_authifier::routes::mfa::routes(),
             "/onboard" => onboard::routes(),
+            "/policy" => policy::routes(),
             "/push" => push::routes(),
             "/sync" => sync::routes(),
             "/webhooks" => webhooks::routes()
@@ -56,6 +58,7 @@ pub fn mount(config: Settings, mut rocket: Rocket<Build>) -> Rocket<Build> {
             "/auth/session" => rocket_authifier::routes::session::routes(),
             "/auth/mfa" => rocket_authifier::routes::mfa::routes(),
             "/onboard" => onboard::routes(),
+            "/policy" => policy::routes(),
             "/push" => push::routes(),
             "/sync" => sync::routes()
         };
@@ -213,7 +216,7 @@ fn custom_openapi_spec() -> OpenApi {
             }),
             license: Some(License {
                 name: "AGPLv3".to_owned(),
-                url: Some("https://github.com/revoltchat/delta/blob/master/LICENSE".to_owned()),
+                url: Some("https://github.com/stoatchat/stoatchat/blob/main/crates/delta/LICENSE".to_owned()),
                 ..Default::default()
             }),
             version: env!("CARGO_PKG_VERSION").to_string(),

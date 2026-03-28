@@ -20,7 +20,7 @@ pub async fn edit(
     db: &State<Database>,
     account: Account,
     user: User,
-    target: Reference,
+    target: Reference<'_>,
     data: Json<v0::DataEditServer>,
     validated_ticket: Option<ValidatedTicket>,
 ) -> Result<Json<v0::Server>> {
@@ -47,7 +47,7 @@ pub async fn edit(
         && data.analytics.is_none()
         && data.discoverable.is_none()
         && data.owner.is_none()
-        && data.remove.is_none()
+        && data.remove.is_empty()
     {
         return Ok(Json(server.into()));
     } else if data.name.is_some()
@@ -56,7 +56,7 @@ pub async fn edit(
         || data.banner.is_some()
         || data.system_messages.is_some()
         || data.analytics.is_some()
-        || data.remove.is_some()
+        || !data.remove.is_empty()
     {
         permissions.throw_if_lacking_channel_permission(ChannelPermission::ManageServer)?;
     }
@@ -113,17 +113,15 @@ pub async fn edit(
     };
 
     // 1. Remove fields from object
-    if let Some(fields) = &remove {
-        if fields.contains(&v0::FieldsServer::Banner) {
-            if let Some(banner) = &server.banner {
-                db.mark_attachment_as_deleted(&banner.id).await?;
-            }
+    if remove.contains(&v0::FieldsServer::Banner) {
+        if let Some(banner) = &server.banner {
+            db.mark_attachment_as_deleted(&banner.id).await?;
         }
+    }
 
-        if fields.contains(&v0::FieldsServer::Icon) {
-            if let Some(icon) = &server.icon {
-                db.mark_attachment_as_deleted(&icon.id).await?;
-            }
+    if remove.contains(&v0::FieldsServer::Icon) {
+        if let Some(icon) = &server.icon {
+            db.mark_attachment_as_deleted(&icon.id).await?;
         }
     }
 
@@ -181,13 +179,7 @@ pub async fn edit(
     }
 
     server
-        .update(
-            db,
-            partial,
-            remove
-                .map(|v| v.into_iter().map(Into::into).collect())
-                .unwrap_or_default(),
-        )
+        .update(db, partial, remove.into_iter().map(Into::into).collect())
         .await?;
 
     Ok(Json(server.into()))

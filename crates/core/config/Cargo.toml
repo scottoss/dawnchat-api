@@ -1,17 +1,20 @@
 [package]
 name = "revolt-config"
-version = "0.8.3"
+version = "0.11.5"
 edition = "2021"
 license = "MIT"
 authors = ["Paul Makles <me@insrt.uk>"]
 description = "Revolt Backend: Configuration"
+repository = "https://github.com/stoatchat/stoatchat"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
+anyhow = ["dep:sentry-anyhow"]
 report-macros = ["revolt-result"]
+sentry = ["dep:sentry"]
 test = ["async-std"]
-default = ["test"]
+default = ["test", "sentry"]
 
 [dependencies]
 # Utility
@@ -31,7 +34,8 @@ log = "0.4.14"
 pretty_env_logger = "0.4.0"
 
 # Sentry
-sentry = "0.31.5"
+sentry = { version = "0.31.5", optional = true }
+sentry-anyhow = { version = "0.38.1", optional = true }
 
 # Core
-revolt-result = { version = "0.8.3", path = "../result", optional = true }
+revolt-result = { version = "0.11.5", path = "../result", optional = true }

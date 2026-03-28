@@ -25,15 +25,21 @@ use tokio::time::Instant;
 use tower_http::cors::{AllowHeaders, Any, CorsLayer};
 use utoipa::ToSchema;
 
-use crate::{exif::strip_metadata, metadata::generate_metadata, mime_type::determine_mime_type};
+use crate::{exif::strip_metadata, metadata::generate_metadata, mime_type::determine_mime_type, AppState};
 
 /// Build the API router
-pub async fn router() -> Router<Database> {
+pub async fn router() -> Router<AppState> {
     let config = config().await;
 
     let cors = CorsLayer::new()
         .allow_methods([Method::POST])
         .allow_headers(AllowHeaders::mirror_request())
+        .expose_headers(vec![
+            "X-RateLimit-Limit".try_into().unwrap(),
+            "X-RateLimit-Bucket".try_into().unwrap(),
+            "X-RateLimit-Remaining".try_into().unwrap(),
+            "X-RateLimit-Reset-After".try_into().unwrap(),
+        ])
         .allow_origin(Any);
 
     Router::new()
@@ -374,7 +380,7 @@ async fn fetch_preview(
 
     let hash = file.as_hash(&db).await?;
 
-    let is_animated = hash.content_type == "image/gif"; // TODO: extract this data from files
+    let is_animated = matches!(hash.metadata, Metadata::Image { animated: true, .. });
 
     // Only process image files and don't process GIFs if not avatar or icon
     if !matches!(hash.metadata, Metadata::Image { .. })

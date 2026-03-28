@@ -1,10 +1,11 @@
 [package]
 name = "revolt-presence"
-version = "0.8.3"
+version = "0.11.5"
 edition = "2021"
 license = "AGPL-3.0-or-later"
 authors = ["Paul Makles <me@insrt.uk>"]
 description = "Revolt Backend: User Presence"
+repository = "https://github.com/stoatchat/stoatchat"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -14,6 +15,9 @@ redis-is-patched = []
 [dev-dependencies]
 # Async
 async-std = { version = "1.8.0", features = ["attributes"] }
+
+# Config for loading Redis URI
+revolt-config = { version = "0.11.5", path = "../config" }
 
 [dependencies]
 # Utility

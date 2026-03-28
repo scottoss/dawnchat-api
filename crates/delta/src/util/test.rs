@@ -1,13 +1,18 @@
 use authifier::{
-    models::{Account, Session},
+    models::{Account, EmailVerification, Session},
     Authifier,
 };
 use futures::StreamExt;
 use rand::Rng;
 use redis_kiss::redis::aio::PubSub;
-use revolt_database::{events::client::EventV1, Database, User, AMQP};
+use revolt_database::{
+    events::client::EventV1, Channel, Database, Member, Message, PartialRole, Server, User, AMQP,
+};
+use revolt_database::{util::idempotency::IdempotencyKey, Role};
 use revolt_models::v0;
-use rocket::local::asynchronous::Client;
+use revolt_permissions::OverrideField;
+use rocket::http::Header;
+use rocket::local::asynchronous::{Client, LocalRequest, LocalResponse};
 
 pub struct TestHarness {
     pub client: Client,
@@ -78,30 +83,143 @@ impl TestHarness {
     }
 
     pub async fn new_user(&self) -> (Account, Session, User) {
-        let account = Account::new(
-            &self.authifier,
-            format!("{}@revolt.chat", TestHarness::rand_string()),
-            "password".to_string(),
-            false,
-        )
-        .await
-        .expect("`Account`");
+        let user = User::create(&self.db, TestHarness::rand_string(), None, None)
+            .await
+            .expect("`User`");
+
+        let (account, session) = self.account_from_user(user.id.clone()).await;
+
+        (account, session, user)
+    }
+
+    pub async fn account_from_user(&self, id: String) -> (Account, Session) {
+        let account = Account {
+            id,
+            email: format!("{}@revolt.chat", TestHarness::rand_string()),
+            password: Default::default(),
+            email_normalised: Default::default(),
+            deletion: None,
+            disabled: false,
+            lockout: None,
+            mfa: Default::default(),
+            password_reset: None,
+            verification: EmailVerification::Verified,
+        };
+
+        self.authifier
+            .database
+            .save_account(&account)
+            .await
+            .expect("`Account`");
 
         let session = account
             .create_session(&self.authifier, String::new())
             .await
             .expect("`Session`");
 
-        let user = User::create(
+        (account, session)
+    }
+
+    pub async fn new_server(&self, user: &User) -> (Server, Vec<Channel>) {
+        Server::create(
             &self.db,
-            TestHarness::rand_string(),
-            account.id.to_string(),
-            None,
+            v0::DataCreateServer {
+                name: "Test Server".to_string(),
+                ..Default::default()
+            },
+            user,
+            true,
         )
         .await
-        .expect("`User`");
+        .expect("Failed to create test server")
+    }
 
-        (account, session, user)
+    pub async fn new_role(
+        &self,
+        server: &Server,
+        rank: i64,
+        overrides: Option<OverrideField>,
+    ) -> Role {
+        let mut role = Role::create(&self.db, &server, TestHarness::rand_string())
+            .await
+            .expect("Failed to create test role");
+
+        if let Some(overrides) = overrides {
+            role.update(
+                &self.db,
+                &server.id,
+                PartialRole {
+                    permissions: Some(overrides),
+                    ..Default::default()
+                },
+                Vec::new(),
+            )
+            .await
+            .expect("Failed to set test role overrides");
+        };
+
+        role
+    }
+
+    pub async fn new_channel(&self, server: &Server) -> Channel {
+        Channel::create_server_channel(
+            &self.db,
+            &mut server.clone(),
+            v0::DataCreateServerChannel {
+                channel_type: v0::LegacyServerChannelType::Text,
+                name: "Test Channel".to_string(),
+                description: None,
+                nsfw: Some(false),
+                voice: None,
+            },
+            true,
+        )
+        .await
+        .expect("Failed to make test channel")
+    }
+
+    pub async fn new_message(
+        &self,
+        user: &User,
+        server: &Server,
+        channels: Vec<Channel>,
+    ) -> (Channel, Member, Message) {
+        let (member, channels) = Member::create(&self.db, server, user, Some(channels))
+            .await
+            .expect("Failed to create member");
+        let channel = &channels[0];
+        let message = Message::create_from_api(
+            &self.db,
+            None,
+            channel.clone(),
+            v0::DataMessageSend {
+                content: Some("Test message".to_string()),
+                nonce: None,
+                attachments: None,
+                replies: None,
+                embeds: None,
+                masquerade: None,
+                interactions: None,
+                flags: None,
+            },
+            v0::MessageAuthor::User(&user.clone().into(&self.db, Some(user)).await),
+            Some(user.clone().into(&self.db, Some(user)).await),
+            Some(member.clone().into()),
+            user.limits().await,
+            IdempotencyKey::unchecked_from_string("0".to_string()),
+            false,
+            false,
+        )
+        .await
+        .expect("Failed to create message");
+        (channel.clone(), member, message)
+    }
+
+    pub async fn with_session(session: Session, request: LocalRequest<'_>) -> LocalResponse<'_> {
+        request
+            .header(Header::new("x-session-token", session.token.to_string()))
+            .dispatch()
+            .await
     }
 
     pub async fn wait_for_event<F>(&mut self, topic: &str, predicate: F) -> EventV1
