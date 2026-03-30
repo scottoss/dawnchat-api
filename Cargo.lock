@@ -6660,9 +6660,9 @@ dependencies = [
 
 [[package]]
 name = "regex"
-version = "1.11.2"
+version = "1.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "23d7fd106d8c02486a8d64e778353d1cffe08ce79ac2e82f540c86d0facf6912"
+checksum = "e10754a14b9137dd7b1e3e5b0493cc9171fdd105e0ab477f51b72e7f3ac0e276"
 dependencies = [
  "aho-corasick",
  "memchr",
@@ -6672,9 +6672,9 @@ dependencies = [
 
 [[package]]
 name = "regex-automata"
-version = "0.4.10"
+version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6b9458fa0bfeeac22b5ca447c63aaf45f28439a709ccd244698632f9aa6394d6"
+checksum = "6e1dd4122fc1595e8162618945476892eefca7b88c52820e74af6262213cae8f"
 dependencies = [
  "aho-corasick",
  "memchr",
@@ -6798,7 +6798,7 @@ dependencies = [
 
 [[package]]
 name = "revolt-autumn"
-version = "0.11.5"
+version = "0.12.0"
 dependencies = [
  "axum",
  "axum-macros",
@@ -6824,6 +6824,7 @@ dependencies = [
  "simdutf8",
  "strum_macros",
  "tempfile",
+ "thumbhash",
  "tokio 1.49.0",
  "tower-http 0.5.2",
  "tracing",
@@ -6836,7 +6837,7 @@ dependencies = [
 
 [[package]]
 name = "revolt-bonfire"
-version = "0.11.5"
+version = "0.12.0"
 dependencies = [
  "async-channel 2.5.0",
  "async-std",
@@ -6867,7 +6868,7 @@ dependencies = [
 
 [[package]]
 name = "revolt-coalesced"
-version = "0.11.5"
+version = "0.12.0"
 dependencies = [
  "indexmap 2.13.0",
  "lru 0.16.3",
@@ -6876,7 +6877,7 @@ dependencies = [
 
 [[package]]
 name = "revolt-config"
-version = "0.11.5"
+version = "0.12.0"
 dependencies = [
  "async-std",
  "cached",
@@ -6893,7 +6894,7 @@ dependencies = [
 
 [[package]]
 name = "revolt-crond"
-version = "0.11.5"
+version = "0.12.0"
 dependencies = [
  "log",
  "revolt-config",
@@ -6905,7 +6906,7 @@ dependencies = [
 
 [[package]]
 name = "revolt-database"
-version = "0.11.5"
+version = "0.12.0"
 dependencies = [
  "amqprs",
  "async-lock 2.8.0",
@@ -6955,7 +6956,7 @@ dependencies = [
 
 [[package]]
 name = "revolt-delta"
-version = "0.11.5"
+version = "0.12.0"
 dependencies = [
  "amqprs",
  "async-channel 1.9.0",
@@ -7005,7 +7006,7 @@ dependencies = [
 
 [[package]]
 name = "revolt-files"
-version = "0.11.5"
+version = "0.12.0"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -7033,7 +7034,7 @@ dependencies = [
 
 [[package]]
 name = "revolt-gifbox"
-version = "0.11.5"
+version = "0.12.0"
 dependencies = [
  "axum",
  "axum-extra",
@@ -7056,7 +7057,7 @@ dependencies = [
 
 [[package]]
 name = "revolt-january"
-version = "0.11.5"
+version = "0.12.0"
 dependencies = [
  "async-recursion",
  "axum",
@@ -7084,7 +7085,7 @@ dependencies = [
 
 [[package]]
 name = "revolt-models"
-version = "0.11.5"
+version = "0.12.0"
 dependencies = [
  "indexmap 1.9.3",
  "iso8601-timestamp",
@@ -7103,14 +7104,14 @@ dependencies = [
 
 [[package]]
 name = "revolt-parser"
-version = "0.11.5"
+version = "0.12.0"
 dependencies = [
  "logos",
 ]
 
 [[package]]
 name = "revolt-permissions"
-version = "0.11.5"
+version = "0.12.0"
 dependencies = [
  "async-std",
  "async-trait",
@@ -7125,7 +7126,7 @@ dependencies = [
 
 [[package]]
 name = "revolt-presence"
-version = "0.11.5"
+version = "0.12.0"
 dependencies = [
  "async-std",
  "log",
@@ -7137,7 +7138,7 @@ dependencies = [
 
 [[package]]
 name = "revolt-pushd"
-version = "0.11.5"
+version = "0.12.0"
 dependencies = [
  "amqprs",
  "anyhow",
@@ -7149,9 +7150,12 @@ dependencies = [
  "iso8601-timestamp",
  "log",
  "pretty_env_logger",
+ "redis-kiss",
+ "regex",
  "revolt-config",
  "revolt-database",
  "revolt-models",
+ "revolt-parser",
  "revolt-presence",
  "revolt-result",
  "revolt_a2",
@@ -7165,7 +7169,7 @@ dependencies = [
 
 [[package]]
 name = "revolt-ratelimits"
-version = "0.11.5"
+version = "0.12.0"
 dependencies = [
  "async-trait",
  "authifier",
@@ -7182,7 +7186,7 @@ dependencies = [
 
 [[package]]
 name = "revolt-result"
-version = "0.11.5"
+version = "0.12.0"
 dependencies = [
  "axum",
  "log",
@@ -7198,7 +7202,7 @@ dependencies = [
 
 [[package]]
 name = "revolt-voice-ingress"
-version = "0.11.5"
+version = "0.12.0"
 dependencies = [
  "amqprs",
  "async-std",
@@ -8831,6 +8835,12 @@ checksum = "f60246a4944f24f6e018aa17cdeffb7818b76356965d03b07d6a9886e8962185"
 dependencies = [
  "cfg-if",
 ]
+
+[[package]]
+name = "thumbhash"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b7726e0245a7331bd0c9a1fb4fd99fd695bcd478ca569f0eda2ff2cb14e7a00"
 
 [[package]]
 name = "tiff"
