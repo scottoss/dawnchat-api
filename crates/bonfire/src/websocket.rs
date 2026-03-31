@@ -5,7 +5,7 @@ use authifier::AuthifierEvent;
 use fred::{
     error::RedisErrorKind,
     interfaces::{ClientLike, EventInterface, PubsubInterface},
-    types::RedisConfig,
+    types::{ReconnectPolicy, RedisConfig},
 };
 use futures::{
     channel::oneshot,
@@ -225,9 +225,9 @@ async fn listener(
         .unwrap_or(REDIS_URI.to_string());
 
     let redis_config = RedisConfig::from_url(&url).unwrap();
-    let subscriber = match report_internal_error!(
-        fred::types::Builder::from_config(redis_config).build_subscriber_client()
-    ) {
+    let mut builder = fred::types::Builder::from_config(redis_config);
+    builder.set_policy(ReconnectPolicy::new_exponential(0, 100, 30_000, 2));
+    let subscriber = match report_internal_error!(builder.build_subscriber_client()) {
         Ok(subscriber) => subscriber,
         Err(_) => return,
     };
@@ -240,13 +240,28 @@ async fn listener(
     let (clean_up_s, clean_up_r) = async_channel::bounded(1);
     let clean_up_s = Arc::new(Mutex::new(clean_up_s));
     subscriber.on_error(move |err| {
+        warn!("Redis subscriber error: {:?}", err);
         if let RedisErrorKind::Canceled = err.kind() {
             let clean_up_s = clean_up_s.clone();
             spawn(async move {
                 clean_up_s.lock().await.send(()).await.ok();
             });
         }
+        // Transient errors (IO, timeout) are handled by the reconnect policy.
 
+        Ok(())
+    });
+
+    // After reconnection, Redis-side subscriptions are lost. Signal the
+    // listener loop to reset and re-subscribe to all topics.
+    let (reconnect_s, reconnect_r) = async_channel::bounded::<()>(1);
+    let reconnect_s = Arc::new(Mutex::new(reconnect_s));
+    subscriber.on_reconnect(move |server| {
+        warn!("Redis subscriber reconnected to {server:?}, resetting subscriptions");
+        let reconnect_s = reconnect_s.clone();
+        spawn(async move {
+            reconnect_s.lock().await.send(()).await.ok();
+        });
         Ok(())
     });
 
@@ -295,8 +310,9 @@ async fn listener(
         let t2 = topic_signal_r.recv().fuse();
         let t3 = kill_signal_r.recv().fuse();
         let t4 = clean_up_r.recv().fuse();
+        let t5 = reconnect_r.recv().fuse();
 
-        pin_mut!(t1, t2, t3, t4);
+        pin_mut!(t1, t2, t3, t4, t5);
 
         select! {
             _ = t4 => {
@@ -304,6 +320,11 @@ async fn listener(
             },
             _ = t3 => {
                 break 'out;
+            },
+            _ = t5 => {
+                // Redis reconnected; force a subscription reset so the listener
+                // re-subscribes to all topics on the new connection.
+                state.state = SubscriptionStateChange::Reset;
             },
             _ = t2 => {},
             message = t1 => {
