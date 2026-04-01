@@ -75,6 +75,8 @@ pub enum ChannelPermission {
     Masquerade = 1 << 28,
     /// React to messages with emojis
     React = 1 << 29,
+    /// Bypass slowmode
+    BypassSlowmode = 1 << 39,
 
     // * Voice permissions
     /// Connect to a voice channel
@@ -99,7 +101,7 @@ pub enum ChannelPermission {
     MentionRoles = 1 << 38,
 
     // * Misc. permissions
-    // % Bits 38 to 52: free area
+    // % Bits 39 to 52: free area
     // % Bits 53 to 64: do not use
 
     // * Grant all permissions
@@ -141,7 +143,7 @@ pub static DEFAULT_PERMISSION: Lazy<u64> = Lazy::new(|| {
 pub static DEFAULT_PERMISSION_SAVED_MESSAGES: u64 = ChannelPermission::GrantAllSafe as u64;
 
 pub static DEFAULT_PERMISSION_DIRECT_MESSAGE: Lazy<u64> = Lazy::new(|| {
-    DEFAULT_PERMISSION.add(ChannelPermission::ManageChannel + ChannelPermission::React)
+    DEFAULT_PERMISSION.add(ChannelPermission::ManageChannel + ChannelPermission::React + ChannelPermission::Masquerade)
 });
 
 pub static DEFAULT_PERMISSION_SERVER: Lazy<u64> = Lazy::new(|| {

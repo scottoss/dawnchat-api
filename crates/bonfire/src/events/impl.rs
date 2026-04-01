@@ -4,7 +4,7 @@ use futures::future::join_all;
 use revolt_database::{
     events::client::{EventV1, ReadyPayloadFields},
     util::permissions::DatabasePermissionQuery,
-    voice::get_channel_voice_state,
+    voice::{get_channel_voice_state, UserVoiceChannel},
     Channel, Database, Member, MemberCompositeKey, Presence, RelationshipStatus,
 };
 use revolt_models::v0;
@@ -167,9 +167,13 @@ impl State {
                         | Channel::TextChannel { voice: Some(_), .. }
                 )
             }) {
-                if let Ok(Some(voice_state)) = get_channel_voice_state(channel).await {
+                if let Ok(Some(voice_state)) =
+                    get_channel_voice_state(&UserVoiceChannel::from_channel(channel)).await
+                {
                     if let Some(server) = channel.server() {
-                        let set = voice_state_server_members.entry(server.to_string()).or_default();
+                        let set = voice_state_server_members
+                            .entry(server.to_string())
+                            .or_default();
 
                         for participant in &voice_state.participants {
                             user_ids.insert(participant.id.clone());
@@ -397,6 +401,11 @@ impl State {
 
     /// Push presence change to the user and all associated server topics
     pub async fn broadcast_presence_change(&self, target: bool) {
+        let config = revolt_config::config().await;
+        if config.disable_events_dont_use {
+            return;
+        }
+
         if if let Some(status) = &self.cache.users.get(&self.cache.user_id).unwrap().status {
             status.presence != Some(Presence::Invisible)
         } else {

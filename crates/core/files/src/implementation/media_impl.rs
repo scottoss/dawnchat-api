@@ -1,5 +1,5 @@
 use anyhow::Result;
-use image::{DynamicImage, ImageBuffer, ImageReader};
+use image::{AnimationDecoder, DynamicImage, ImageBuffer, ImageReader};
 use jxl_oxide::integration::JxlDecoder;
 use revolt_config::report_internal_error;
 use std::io::{BufRead, Read, Seek};
@@ -32,6 +32,31 @@ impl MediaRepository for MediaImpl {
             Some((size.width, size.height))
         } else {
             None
+        }
+    }
+
+    fn is_animated(&self, f: &NamedTempFile, mime: &str) -> Option<bool> {
+        match mime {
+            // Current behaviour is to assume GIFs are animated, this checks for at least 2 frames
+            "image/gif" => {
+                let file = std::fs::File::open(f.path()).ok()?;
+                let reader = std::io::BufReader::new(file);
+                let decoder = image::codecs::gif::GifDecoder::new(reader).ok()?;
+                Some(decoder.into_frames().take(2).count() > 1)
+            }
+            "image/png" => {
+                let file = std::fs::File::open(f.path()).ok()?;
+                let reader = std::io::BufReader::new(file);
+                let decoder = image::codecs::png::PngDecoder::new(reader).ok()?;
+                decoder.is_apng().ok()
+            }
+            "image/webp" => {
+                let file = std::fs::File::open(f.path()).ok()?;
+                let reader = std::io::BufReader::new(file);
+                let decoder = image::codecs::webp::WebPDecoder::new(reader).ok()?;
+                Some(decoder.has_animation())
+            }
+            _ => Some(false),
         }
     }
 
@@ -132,6 +157,17 @@ impl MediaRepository for MediaImpl {
         let [w, h] = self.config.preview.get(tag).unwrap();
 
         let image = image.thumbnail(image.width().min(*w as u32), image.height().min(*h as u32));
+        let image = match image {
+            DynamicImage::ImageRgb8(_) => image,
+            DynamicImage::ImageRgba8(_) => image,
+            _ => {
+                if image.has_alpha() {
+                    image.to_rgba8().into()
+                } else {
+                    image.to_rgb8().into()
+                }
+            }
+        };
 
         let encoder = webp::Encoder::from_image(&image).expect("Could not create encoder.");
         if self.config.webp_quality != 100.0 {
@@ -160,9 +196,9 @@ impl MediaRepository for MediaImpl {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
-
     use crate::{MediaImpl, MediaRepository};
+    use std::io::{Cursor, Write};
+    use tempfile::NamedTempFile;
 
     #[tokio::test]
     async fn asset_test_jpeg() {
@@ -173,6 +209,15 @@ mod tests {
         let mut reader = Cursor::new(buf);
         let image = media.decode_image(&mut reader, "image/jpeg").unwrap();
         media.create_thumbnail(image, "attachments");
+    }
+
+    #[tokio::test]
+    async fn asset_test_jpeg_is_not_animated() {
+        let media = MediaImpl::from_config().await;
+        let mut f = NamedTempFile::new().unwrap();
+        f.write_all(include_bytes!("../../tests/assets/test.jpeg"))
+            .unwrap();
+        assert_eq!(media.is_animated(&f, "image/jpeg"), Some(false));
     }
 
     #[tokio::test]
@@ -202,6 +247,15 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn asset_test_png_is_not_animated() {
+        let media = MediaImpl::from_config().await;
+        let mut f = NamedTempFile::new().unwrap();
+        f.write_all(include_bytes!("../../tests/assets/test.png"))
+            .unwrap();
+        assert_eq!(media.is_animated(&f, "image/png"), Some(false));
+    }
+
+    #[tokio::test]
     async fn asset_test_png_extra_bytes() {
         let media = MediaImpl::from_config().await;
         let buf = [
@@ -214,6 +268,17 @@ mod tests {
         let mut reader = Cursor::new(buf);
         let image = media.decode_image(&mut reader, "image/png").unwrap();
         media.create_thumbnail(image, "emojis");
+    }
+
+    #[tokio::test]
+    async fn asset_test_floating_point_png() {
+        let media = MediaImpl::from_config().await;
+        let buf = include_bytes!("../../tests/assets/test-float.png");
+        assert_eq!(media.image_size_vec(buf, "image/png"), Some((300, 300)));
+
+        let mut reader = Cursor::new(buf);
+        let image = media.decode_image(&mut reader, "image/png").unwrap();
+        media.create_thumbnail(image, "avatars");
     }
 
     #[tokio::test]
@@ -235,6 +300,15 @@ mod tests {
         let mut reader = Cursor::new(buf);
         let image = media.decode_image(&mut reader, "image/png").unwrap();
         media.create_thumbnail(image, "attachments");
+    }
+
+    #[tokio::test]
+    async fn asset_test_animated_png_is_animated() {
+        let media = MediaImpl::from_config().await;
+        let mut f = NamedTempFile::new().unwrap();
+        f.write_all(include_bytes!("../../tests/assets/anim-icos.apng"))
+            .unwrap();
+        assert_eq!(media.is_animated(&f, "image/png"), Some(true));
     }
 
     #[tokio::test]
@@ -271,6 +345,15 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn asset_test_webp_is_not_animated() {
+        let media = MediaImpl::from_config().await;
+        let mut f = NamedTempFile::new().unwrap();
+        f.write_all(include_bytes!("../../tests/assets/dice.webp"))
+            .unwrap();
+        assert_eq!(media.is_animated(&f, "image/webp"), Some(false));
+    }
+
+    #[tokio::test]
     async fn asset_test_animated_webp() {
         let media = MediaImpl::from_config().await;
         let buf = include_bytes!("../../tests/assets/anim-icos.webp");
@@ -282,6 +365,15 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn asset_test_animated_webp_is_animated() {
+        let media = MediaImpl::from_config().await;
+        let mut f = NamedTempFile::new().unwrap();
+        f.write_all(include_bytes!("../../tests/assets/anim-icos.webp"))
+            .unwrap();
+        assert_eq!(media.is_animated(&f, "image/webp"), Some(true));
+    }
+
+    #[tokio::test]
     async fn asset_test_animated_gif() {
         let media = MediaImpl::from_config().await;
         let buf = include_bytes!("../../tests/assets/anim-icos.gif");
@@ -290,5 +382,14 @@ mod tests {
         let mut reader = Cursor::new(buf);
         let image = media.decode_image(&mut reader, "image/gif").unwrap();
         media.create_thumbnail(image, "attachments");
+    }
+
+    #[tokio::test]
+    async fn asset_test_animated_gif_is_animated() {
+        let media = MediaImpl::from_config().await;
+        let mut f = NamedTempFile::new().unwrap();
+        f.write_all(include_bytes!("../../tests/assets/anim-icos.gif"))
+            .unwrap();
+        assert_eq!(media.is_animated(&f, "image/gif"), Some(true));
     }
 }
