@@ -165,7 +165,7 @@ pub static DISCRIMINATOR_SEARCH_SPACE: Lazy<HashSet<String>> = Lazy::new(|| {
 });
 
 static BLOCKED_USERNAME_PATTERNS: Lazy<Regex> = Lazy::new(|| {
-    RegexBuilder::new("`{3}|((discord|rvlt|guilded|stt)\\.gg|(revolt|stoat)\\.chat|https?:\\/\\/)")
+    RegexBuilder::new("`{3}|(discord|rvlt|guilded|stt)\\.gg|(revolt|stoat)\\.chat|https?:\\/\\/")
         .case_insensitive(true)
         .build()
         .unwrap()
@@ -910,10 +910,15 @@ mod tests {
 
     #[async_std::test]
     async fn create_user() {
+        use revolt_result::{ErrorType::*, Result};
+
         database_test!(|db| async move {
             let created_clean = User::create(&db, "Test".to_string(), None, None)
                 .await
                 .unwrap();
+
+            assert_eq!("Test", created_clean.username);
+
 
             let mut updated_clean = User::create(&db, "Test".to_string(), None, None)
                 .await
@@ -923,36 +928,24 @@ mod tests {
                 .await
                 .unwrap();
 
-            let created_sanitised = User::create(&db, "http://test".to_string(), None, None)
+            assert_eq!("Test2", updated_clean.username);
+
+
+            let created_invalid_result: Result<_> =
+                User::create(&db, "stoat.chat".to_string(), None, None).await;
+
+            assert!(created_invalid_result.is_err());
+
+
+            let mut updated_invalid = User::create(&db, "Test".to_string(), None, None)
                 .await
                 .unwrap();
 
-            let created_disallowed_patterns_sanitised = User::create(&db, "test_stoat.chat".to_string(), None, None)
-                .await
-                .unwrap();
-
-            let mut updated_sanitised = User::create(&db, "Test".to_string(), None, None)
-                .await
-                .unwrap();
-            updated_sanitised
+            let updated_invalid_update_result = updated_invalid
                 .update_username(&db, "http://test".to_string())
-                .await
-                .unwrap();
+                .await;
 
-            assert_eq!("test", created_clean.username);
-            assert_eq!("Test", created_clean.display_name.unwrap());
-
-            assert_eq!("test2", updated_clean.username);
-            assert_eq!("Test", updated_clean.display_name.unwrap());
-
-            assert_eq!("test", created_sanitised.username);
-            assert_eq!("http://test", created_sanitised.display_name.unwrap());
-
-            assert_eq!("test_", created_disallowed_patterns_sanitised.username);
-            assert_eq!("test_stoat.chat", created_disallowed_patterns_sanitised.display_name.unwrap());
-
-            assert_eq!("test", updated_sanitised.username);
-            assert_eq!("http://test", updated_sanitised.display_name.unwrap());
+            assert!(updated_invalid_update_result.is_err());
         });
     }
 }
