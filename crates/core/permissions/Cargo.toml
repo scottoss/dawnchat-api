@@ -22,7 +22,7 @@ async-std = { version = "1.8.0", features = ["attributes"] }
 
 [dependencies]
 # Core
-revolt-result = { version = "0.12.0", path = "../result" }
+revolt-result = { workspace = true }
 
 # Utility
 auto_ops = "0.3.0"

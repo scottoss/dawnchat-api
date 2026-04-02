@@ -21,8 +21,8 @@ default = ["serde", "partials", "rocket"]
 
 [dependencies]
 # Core
-revolt-config = { version = "0.12.0", path = "../config" }
-revolt-permissions = { version = "0.12.0", path = "../permissions" }
+revolt-config = { workspace = true }
+revolt-permissions = { workspace = true }
 
 # Utility
 regex = "1.11"

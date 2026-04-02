@@ -45,16 +45,11 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Core crates
-revolt-files = { version = "0.12.0", path = "../../core/files" }
-revolt-config = { version = "0.12.0", path = "../../core/config" }
-revolt-database = { version = "0.12.0", path = "../../core/database", features = [
-    "axum-impl",
-] }
-revolt-result = { version = "0.12.0", path = "../../core/result", features = [
-    "utoipa",
-    "axum",
-] }
-revolt-ratelimits = { version = "0.12.0", path = "../../core/ratelimits", features = ["axum"] }
+revolt-files = { workspace = true }
+revolt-config = { workspace = true }
+revolt-database = { workspace = true, features = ["axum-impl"] }
+revolt-result = { workspace = true, features = ["utoipa", "axum"] }
+revolt-ratelimits = { workspace = true, features = ["axum"] }
 
 # Axum / web server
 tempfile = "3.12.0"

@@ -33,13 +33,10 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Core crates
-revolt-config = { version = "0.12.0", path = "../../core/config" }
-revolt-models = { version = "0.12.0", path = "../../core/models" }
-revolt-result = { version = "0.12.0", path = "../../core/result", features = [
-    "utoipa",
-    "axum",
-] }
-revolt-files = { version = "0.12.0", path = "../../core/files" }
+revolt-config = { workspace = true }
+revolt-models = { workspace = true }
+revolt-result = { workspace = true, features = ["utoipa", "axum"] }
+revolt-files = { workspace = true }
 
 # Axum / web server
 axum = { version = "0.7.5" }
