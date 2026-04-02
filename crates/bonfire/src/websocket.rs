@@ -226,7 +226,7 @@ async fn listener(
 
     let redis_config = RedisConfig::from_url(&url).unwrap();
     let mut builder = fred::types::Builder::from_config(redis_config);
-    builder.set_policy(ReconnectPolicy::new_exponential(0, 100, 30_000, 2));
+    builder.set_policy(ReconnectPolicy::new_exponential(8, 100, 30_000, 2));
     let subscriber = match report_internal_error!(builder.build_subscriber_client()) {
         Ok(subscriber) => subscriber,
         Err(_) => return,
