@@ -13,7 +13,7 @@ use rocket::serde::json::Json;
 use rocket::State;
 use validator::Validate;
 
-use crate::util::kafka::KafkaClient;
+use crate::util::osprey::OspreyClient;
 
 /// # Send Message
 ///
@@ -23,7 +23,7 @@ use crate::util::kafka::KafkaClient;
 pub async fn message_send(
     db: &State<Database>,
     amqp: &State<AMQP>,
-    kafka: &State<KafkaClient>,
+    osprey: &State<OspreyClient>,
     user: User,
     target: Reference<'_>,
     data: Json<v0::DataMessageSend>,
@@ -155,31 +155,8 @@ pub async fn message_send(
     )
         .await?
         .into_model(Some(model_user), model_member);
-    
-    let action_id = ulid::Ulid::from_string(&m.id)
-        .expect("our ulids to be correct");
-    let action_id = (action_id.0 >> 64) as u64;
-    let payload = serde_json::json!({
-        "send_time": Utc::now().to_rfc3339(),
-        "data": {
-            "action_id": action_id,
-            "action_name": "create_post",
-            "data": {
-                "user_id": m.author,
-                "ip_address": "127.0.0.1",
-                "event_type": "create_post",
-                "post": {
-                    "text": m.content.clone().unwrap_or_default()
-                }
-            }
-        }
-    }).to_string();
 
-    let record = kafka.create_record()
-        .payload(&payload)
-        .key(&m.id);
-    let sent_message = kafka.enqueue(record).await;
-    dbg!(sent_message);
+    osprey.publish_message(&m).await;
     
     Ok(Json(m))
 }

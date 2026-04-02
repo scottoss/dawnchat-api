@@ -5,10 +5,14 @@ use rdkafka::producer::future_producer::Delivery;
 use rdkafka::error::KafkaError;
 use rdkafka::message;
 use rdkafka::message::OwnedMessage;
+use rdkafka::message::BorrowedMessage;
+use rdkafka::consumer::StreamConsumer;
+use rdkafka::consumer::Consumer;
 
 const KAFKA_TOPIC: &'static str = "osprey.actions_input";
 
-/// Wrapper for the Kafka client, managed by Rocket
+/// Wrapper for the Kafka client
+#[derive(Clone)]
 pub struct KafkaClient(FutureProducer);
 
 impl KafkaClient {
