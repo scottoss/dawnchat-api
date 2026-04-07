@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::str::FromStr;
 
 use once_cell::sync::Lazy;
+use revolt_models::v0;
 use revolt_result::Result;
 use ulid::Ulid;
 
@@ -33,6 +34,9 @@ auto_derived!(
         /// Whether the emoji is marked as nsfw
         #[serde(skip_serializing_if = "crate::if_false", default)]
         pub nsfw: bool,
+        /// Optional image metadata
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub metadata: Option<v0::EmojiMetadata>,
     }
 
     /// Parent Id of the emoji
@@ -40,6 +44,14 @@ auto_derived!(
     pub enum EmojiParent {
         Server { id: String },
         Detached,
+    }
+
+    /// Partial representation of an emoji
+    pub struct PartialEmoji {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub name: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub metadata: Option<v0::EmojiMetadata>,
     }
 );
 
@@ -73,6 +85,31 @@ impl Emoji {
         .await;
 
         db.detach_emoji(&self).await
+    }
+
+    /// Update an emoji
+    pub async fn update(&mut self, db: &Database, partial: PartialEmoji) -> Result<()> {
+        if let Some(name) = partial.name.clone() {
+            self.name = name;
+        }
+
+        if let Some(metadata) = partial.metadata.clone() {
+            self.metadata = Some(metadata);
+        }
+
+        db.update_emoji(&self.id, &partial).await?;
+
+        EventV1::EmojiUpdate {
+            id: self.id.clone(),
+            data: v0::PartialEmoji {
+                name: partial.name.clone(),
+                metadata: partial.metadata.clone(),
+            },
+        }
+        .p(self.parent().to_string())
+        .await;
+
+        Ok(())
     }
 
     /// Check whether we can use a given emoji
