@@ -343,6 +343,7 @@ impl From<crate::Emoji> for Emoji {
             name: value.name,
             animated: value.animated,
             nsfw: value.nsfw,
+            metadata: value.metadata,
         }
     }
 }

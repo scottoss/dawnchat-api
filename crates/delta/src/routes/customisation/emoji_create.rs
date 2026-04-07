@@ -60,6 +60,7 @@ pub async fn create_emoji(
         name: data.name,
         animated: "image/gif" == &attachment.content_type,
         nsfw: data.nsfw,
+        metadata: None,
     };
 
     // Save emoji
